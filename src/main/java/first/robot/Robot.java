@@ -22,6 +22,9 @@ public class Robot extends LoggedRobot {
     CommandScheduler.getInstance().run();
   }
 
+  @Override 
+  public void driverStationConnected() {}
+
   @Override
   public void disabledInit() {}
 
