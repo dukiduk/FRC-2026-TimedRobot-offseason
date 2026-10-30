@@ -23,7 +23,6 @@ import org.wpilib.math.numbers.N1;
 import org.wpilib.math.numbers.N3;
 import org.wpilib.driverstation.Alliance;
 import org.wpilib.driverstation.MatchState;
-import org.wpilib.system.Notifier;
 import org.wpilib.system.RobotController;
 import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.command2.Command;
@@ -44,21 +43,21 @@ import first.robot.util.telepathy.commands.ShinFollowPathCommand;
  *  !Subsystem so it can easily be used in command-based projects.
  */
 public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Subsystem, SwerveIO {
-    private static final double kSimLoopPeriod = 0.002; // 2 ms
-    private Notifier m_simNotifier = null;
+    // private static final double kSimLoopPeriod = 0.002; // 2 ms
+    // private Notifier m_simNotifier = null;
 
     private int loggingLoopCounter = 0;
     private static final int LOG_EVERY_N_LOOPS = 5; // 5 loops = about 100ms
     //private final BaseStatusSignal[] m_logSignals;
 
     //* Blue alliance sees forward as 0 degrees (toward red alliance wall) */
-    private static final Rotation2d kBlueAlliancePerspectiveRotation = Rotation2d.ZERO;
+    //private static final Rotation2d kBlueAlliancePerspectiveRotation = Rotation2d.ZERO;
 
     //* Red alliance sees forward as 180 degrees (toward blue alliance wall) */
-    private static final Rotation2d kRedAlliancePerspectiveRotation = Rotation2d.k180deg;
+   //private static final Rotation2d kRedAlliancePerspectiveRotation = Rotation2d.k180deg;
 
     //* Keep track if we've ever applied the operator perspective before or not */
-    private boolean m_hasAppliedOperatorPerspective = false;
+    //private boolean m_hasAppliedOperatorPerspective = false;
 
     private final SwerveIOInputsAutoLogged m_inputs = new SwerveIOInputsAutoLogged();
 
