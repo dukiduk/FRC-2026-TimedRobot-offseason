@@ -1,4 +1,4 @@
-package first.robot.util;
+package first.robot.util.misc;
 
 import org.wpilib.driverstation.GenericHID.RumbleType;
 import org.wpilib.command2.Command;

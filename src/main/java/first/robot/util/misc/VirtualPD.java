@@ -1,4 +1,4 @@
-package first.robot.util;
+package first.robot.util.misc;
 
 import static org.wpilib.units.Units.Amps;
 import static org.wpilib.units.Units.Joules;
