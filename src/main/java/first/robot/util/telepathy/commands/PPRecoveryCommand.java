@@ -1,0 +1,98 @@
+package first.robot.util.telepathy.commands;
+
+import org.littletonrobotics.junction.Logger;
+
+import com.pathplanner.lib.controllers.PPHolonomicDriveController;
+import com.pathplanner.lib.path.PathPlannerPath;
+import com.pathplanner.lib.config.PIDConstants;
+import com.pathplanner.lib.trajectory.PathPlannerTrajectoryState;
+import com.pathplanner.lib.util.DriveFeedforwards;
+import com.pathplanner.lib.util.PPLibTelemetry;
+import com.pathplanner.lib.commands.PathPlannerAuto;
+
+import org.wpilib.math.geometry.Pose2d;
+import org.wpilib.math.kinematics.ChassisVelocities;
+import org.wpilib.command2.Command;
+import org.wpilib.command2.button.Trigger;
+import first.robot.util.telepathy.builders.GoingMerry;
+import first.robot.util.telepathy.telemetry.PPLogging;
+import first.robot.util.telepathy.util.PathUtil;
+
+// * Modified Drive to Point Command that smoothly follows a path to a certain PPTrajState
+// * Can be used to smoothly get back on the path if temporarily beached.
+public class PPRecoveryCommand extends Command {
+    
+    private final PathPlannerTrajectoryState endState;
+    private final PPHolonomicDriveController pathController;
+
+    private final Trigger endTrigger;
+
+    private PPRecoveryCommand(PathPlannerPath ogPath, PathPlannerTrajectoryState endState) {
+
+        this.endState = endState;
+
+        this.pathController = new PPHolonomicDriveController(
+            new PIDConstants(1.45, 0, 0.01),
+            new PIDConstants(1.2, 0, 0));
+
+        endTrigger = new Trigger(() -> {
+
+            boolean atState = PathUtil.distanceAlongPath(ogPath, GoingMerry.getCurrentPose(), endState) <= 0.2;
+
+            Logger.recordOutput("Pathmaster/recovery ended/at state", atState);
+            return atState;
+
+            }
+        );
+    }
+
+    public static Command generateCommand(PathPlannerPath ogPath, PathPlannerTrajectoryState endState){
+        return new PPRecoveryCommand(ogPath, endState);
+    }
+
+    @Override
+    public void initialize() {
+        Logger.recordOutput("Drive/DriveToPointReached", false);
+        Logger.recordOutput("Drive/DriveToPointMap", new Pose2d[] {GoingMerry.getCurrentPose(), endState.pose});
+        PPLogging.logTargetPose(endState.pose);
+        PPLibTelemetry.setTargetPose(endState.pose);
+        pathController.reset(GoingMerry.getCurrentPose(), GoingMerry.getCurrentSpeeds());
+        PathPlannerAuto.currentPathName = "Recovery";
+    }
+
+    @Override
+    public void execute() {
+
+        Logger.recordOutput("Pathmaster/Recovered Path", endTrigger.getAsBoolean());
+
+        ChassisVelocities targetSpeeds = pathController.calculateRobotRelativeSpeeds(GoingMerry.getCurrentPose(), endState);
+        GoingMerry.getOutput().accept(targetSpeeds, DriveFeedforwards.zeros(4));
+        
+        ChassisVelocities currentSpeeds = GoingMerry.getCurrentSpeeds();
+
+        PPLogging.logVelocities(
+            Math.hypot(currentSpeeds.vx, currentSpeeds.vy),
+            Math.hypot(targetSpeeds.vx,  targetSpeeds.vy),
+            currentSpeeds.omega,
+            targetSpeeds.omega
+        );
+
+        
+        PPLibTelemetry.setVelocities(
+            Math.hypot(currentSpeeds.vx, currentSpeeds.vy),
+            Math.hypot(targetSpeeds.vx,  targetSpeeds.vy),
+            currentSpeeds.omega,
+            targetSpeeds.omega
+        );
+    }
+
+    @Override
+    public boolean isFinished() {
+        return endTrigger.getAsBoolean();
+    }
+
+    @Override
+    public void end(boolean interrupted) {
+        Logger.recordOutput("Pathmaster/Recovered Path", endTrigger.getAsBoolean());
+    }
+}

@@ -1,0 +1,120 @@
+package first.robot.util.telepathy.events;
+
+import com.pathplanner.lib.events.Event;
+import com.pathplanner.lib.events.EventScheduler;
+import com.pathplanner.lib.path.PathPlannerPath;
+import com.pathplanner.lib.trajectory.PathPlannerTrajectory;
+import org.wpilib.event.EventLoop;
+import org.wpilib.command2.Command;
+import org.wpilib.command2.CommandScheduler;
+import org.wpilib.command2.Subsystem;
+
+import java.util.*;
+
+/**
+ * Extends EventScheduler to handle events using WPILIB CommandScheduler.
+ * This is done so that we dont have to define requirements in ShinPathfindingCommand
+ * which allows us to get all the requirements dynamically as new paths are found
+ */
+public class EventSupervisor extends EventScheduler {
+  private static final EventLoop eventLoop = EventScheduler.getEventLoop();
+
+  private final Queue<Event> upcomingEvents;
+  private final Set<Command> scheduledCommands;
+
+  /** Create a new EventSupervisor */
+  public EventSupervisor() {
+    this.upcomingEvents =
+        new PriorityQueue<>(Comparator.comparingDouble(Event::getTimestampSeconds));
+    this.scheduledCommands = new HashSet<>();
+  }
+
+  /**
+   * Initialize the EventSupervisor for the given trajectory. This should be called from the
+   * initialize method of the command running this scheduler.
+   *
+   * @param trajectory The trajectory this scheduler should handle events for
+   */
+  @Override
+  public void initialize(PathPlannerTrajectory trajectory) {
+    upcomingEvents.clear();
+    scheduledCommands.clear();
+    upcomingEvents.addAll(trajectory.getEvents());
+  }
+
+  /**
+   * Run the scheduler. This should be called from the execute method of the command running this
+   * scheduler.
+   *
+   * @param time The current time along the trajectory
+   */
+  @Override
+  public void execute(double time) {
+    // Check for events that should be handled this loop
+    while (!upcomingEvents.isEmpty() && time >= upcomingEvents.peek().getTimestampSeconds()) {
+      upcomingEvents.poll().handleEvent(this);
+    }
+
+    eventLoop.poll();
+  }
+
+  /**
+   * End commands currently/events currently being handled by this scheduler. This should be called
+   * from the end method of the command running this scheduler.
+   */
+   @Override
+    public void end() {
+        for (Command c : scheduledCommands) {
+            CommandScheduler.getInstance().cancel(c);
+        }
+
+        scheduledCommands.clear();
+
+        for (Event e : upcomingEvents) {
+            e.cancelEvent(this);
+        }
+        upcomingEvents.clear();
+    }
+
+  /**
+   * Get the event loop used to poll global event triggers
+   *
+   * @return Event loop that polls global event triggers
+   */
+  protected static EventLoop getEventLoop() {
+    return eventLoop;
+  }
+
+  /**
+   * Get all subsystem requirements for a given path
+   * 
+   * @return Set of all Subsystems required by the path
+   */
+  public static Set<Subsystem> getSchedulerRequirements(PathPlannerPath path) {
+    return EventScheduler.getSchedulerRequirements(path);
+  }
+
+  /**
+   * Schedule a command on this scheduler. This will cancel other commands that share requirements
+   * with the given command.
+   *
+   * @param command The command to schedule
+   */
+  @Override
+  protected void scheduleCommand(Command command) {
+    scheduledCommands.add(command);
+    CommandScheduler.getInstance().schedule(command);
+  }
+
+  /**
+   * Cancel a command on this scheduler.
+   *
+   * @param command The command to cancel
+   */
+  @Override
+  protected void cancelCommand(Command command) {
+      if (scheduledCommands.remove(command)) {
+          CommandScheduler.getInstance().cancel(command);
+      }
+  }
+}

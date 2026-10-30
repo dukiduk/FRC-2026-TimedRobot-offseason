@@ -21,8 +21,8 @@ import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.numbers.N1;
 import org.wpilib.math.numbers.N3;
-import org.wpilib.math.system.DCMotor;
 import org.wpilib.driverstation.Alliance;
+import org.wpilib.driverstation.MatchState;
 import org.wpilib.system.Notifier;
 import org.wpilib.system.RobotController;
 import org.wpilib.math.kinematics.ChassisVelocities;
@@ -30,13 +30,11 @@ import org.wpilib.command2.Command;
 import org.wpilib.command2.Subsystem;
 import org.wpilib.command2.sysid.SysIdRoutine;
 import first.robot.Constants.DriveConstants;
-import first.robot.generated.TunerConstants;
 import first.robot.generated.TunerConstants.TunerSwerveDrivetrain;
 import first.robot.util.Elastic;
-import first.robot.util.misc.VirtualPD;
-import first.robot.util.pathfinding.builders.GoingMerry;
-import first.robot.util.pathfinding.commands.ShinFollowPathCommand;
-import first.robot.util.simulation.MapleSimSwerveDrivetrain;
+import first.robot.util.VirtualPD;
+import first.robot.util.telepathy.builders.GoingMerry;
+import first.robot.util.telepathy.commands.ShinFollowPathCommand;
 // import limelight.networktables.Orientation3d;
 // import limelight.networktables.AngularVelocity3d;
 
@@ -54,7 +52,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     //private final BaseStatusSignal[] m_logSignals;
 
     //* Blue alliance sees forward as 0 degrees (toward red alliance wall) */
-    private static final Rotation2d kBlueAlliancePerspectiveRotation = Rotation2d.kZero;
+    private static final Rotation2d kBlueAlliancePerspectiveRotation = Rotation2d.ZERO;
 
     //* Red alliance sees forward as 180 degrees (toward blue alliance wall) */
     private static final Rotation2d kRedAlliancePerspectiveRotation = Rotation2d.k180deg;
@@ -67,7 +65,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     /** // !Swerve request to apply during robot-centric path following 
      *  // *This also takes in our robot's physical constrants to create optimal path speeds.
     */
-    private final SwerveRequest.ApplyRobotSpeeds m_pathApplyRobotSpeeds = new SwerveRequest.ApplyRobotSpeeds();
+    private final SwerveRequest.ApplyRobotVelocity m_pathApplyRobotSpeeds = new SwerveRequest.ApplyRobotVelocity();
 
     // *Separate request object for runVelocity (teleop/default command).
     // *MUST NOT be the same instance as m_pathApplyRobotSpeeds: the path follower
@@ -76,7 +74,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     // *ends. runVelocity() only calls .withSpeeds() and never clears the feedforwards,
     // *so the stale path-end forces keep the drive motors spinning at cruise speed
     // *regardless of what velocity is commanded — causing the observed drift.
-    private final SwerveRequest.ApplyRobotSpeeds m_teleopApplyRobotSpeeds = new SwerveRequest.ApplyRobotSpeeds();
+    private final SwerveRequest.ApplyRobotVelocity m_teleopApplyRobotSpeeds = new SwerveRequest.ApplyRobotVelocity();
     
     //** Swerve request to apply after the robot finished going through a path in Pathmaster. */
     private final SwerveRequest.Idle m_idle = new SwerveRequest.Idle();
@@ -174,11 +172,11 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         SwerveDrivetrainConstants drivetrainConstants,
         SwerveModuleConstants<?, ?, ?>... modules
     ) {
-        super(drivetrainConstants, MapleSimSwerveDrivetrain.regulateModuleConstantsForSimulation(modules));
+        super(drivetrainConstants, modules);
 
-        if (Utils.isSimulation()) {
-            startSimThread();
-        }
+        // if (Utils.isSimulation()) {
+        //     startSimThread();
+        // }
 
         registerMotors();
 
@@ -205,9 +203,9 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     ) {
         super(drivetrainConstants, odometryUpdateFrequency, modules);
         //m_logSignals = cacheLogSignals();
-        if (Utils.isSimulation()) {
-            startSimThread();
-        }
+        // if (Utils.isSimulation()) {
+        //     startSimThread();
+        // }
         registerMotors();
 
         configureAutoBuilder();
@@ -241,9 +239,9 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     ) {
         super(drivetrainConstants, odometryUpdateFrequency, odometryStandardDeviation, visionStandardDeviation, modules);
         //m_logSignals = cacheLogSignals();
-        if (Utils.isSimulation()) {
-            startSimThread();
-        }
+        // if (Utils.isSimulation()) {
+        //     startSimThread();
+        // }
 
         registerMotors();
 
@@ -260,7 +258,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
                 this::getSpeeds, // Supplier of current robot speeds
                 (speeds, feedforwards) -> {
                     setControl(
-                        m_pathApplyRobotSpeeds.withSpeeds(speeds)
+                        m_pathApplyRobotSpeeds.withVelocity(speeds)
                             .withWheelForceFeedforwardsX(feedforwards.robotRelativeForcesXNewtons())
                             .withWheelForceFeedforwardsY(feedforwards.robotRelativeForcesYNewtons())
                     );
@@ -268,7 +266,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
                 DriveConstants.pathController,
                 config,
                 // *Assume the path needs to be flipped for Red vs Blue, this is normally the case
-                () -> DriverStation.getAlliance().orElse(Alliance.Blue) == Alliance.Red,
+                () -> MatchState.getAlliance().orElse(Alliance.BLUE) == Alliance.RED,
                 this // Subsystem for requirements
             );
 
@@ -279,19 +277,19 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
                     this::getSpeeds,
                     (speeds, feedforwards) -> {
                         setControl(
-                            m_pathApplyRobotSpeeds.withSpeeds(speeds.times(0.3))
+                            m_pathApplyRobotSpeeds.withVelocity(speeds.times(0.3))
                                 .withWheelForceFeedforwardsX(feedforwards.robotRelativeForcesXNewtons())
                                 .withWheelForceFeedforwardsY(feedforwards.robotRelativeForcesYNewtons())
                         );
                     },
                     DriveConstants.pathController,
                     config,
-                    () -> DriverStation.getAlliance().orElse(Alliance.Blue) == Alliance.Red,
+                    () -> MatchState.getAlliance().orElse(Alliance.BLUE) == Alliance.RED,
                     this
                 ),
                 this::getPose,
                 this::resetPose,
-                () -> DriverStation.getAlliance().orElse(Alliance.Blue) == Alliance.Red,
+                () -> MatchState.getAlliance().orElse(Alliance.BLUE) == Alliance.RED,
                 true
             );
         } catch (Exception ex) {
@@ -338,21 +336,11 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
 
     // *get robot pose
     public Pose2d getPose() {
-        if (Utils.isSimulation() && mapleSimSwerveDrivetrain != null) {
-            return mapleSimSwerveDrivetrain.mapleSimDrive
-                .getSimulatedDriveTrainPose();
-        }
-
         return getState().Pose;
     }
 
-    public ChassisSpeeds getSpeeds() {
-        if (Utils.isSimulation() && mapleSimSwerveDrivetrain != null) {
-            return mapleSimSwerveDrivetrain.mapleSimDrive
-                .getDriveTrainSimulatedChassisSpeedsRobotRelative();
-        }
-
-        return getState().Speeds;
+    public ChassisVelocities getSpeeds() {
+        return getState().Velocity;
     }
 
     public Command idle() {
@@ -367,20 +355,9 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         }
     }
 
-    public Orientation3d getRobotOrientation3d() {
-        Pigeon2 gyroZeppeli = getPigeon2();
-
-        return new Orientation3d(getRotation3d(), new AngularVelocity3d(
-            gyroZeppeli.getAngularVelocityXWorld().getValue(),
-            gyroZeppeli.getAngularVelocityYWorld().getValue(),
-            gyroZeppeli.getAngularVelocityZWorld().getValue()
-        ));
-    }
-
     //Updates maplesim pose
     @Override
     public void simulationPeriodic() {
-        Logger.recordOutput("maplesimpose", mapleSimSwerveDrivetrain.mapleSimDrive.getSimulatedDriveTrainPose());
     }
 
     @Override
@@ -407,63 +384,47 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
             Logger.recordOutput("Gyro/YawRate", pigeon.getAngularVelocityZWorld().getValueAsDouble());
             Logger.recordOutput("Gyro/IsConnected", pigeon.isConnected());
         }
-
-        // |Sim alliance perspective config
-        if (Utils.isSimulation()) {
-            if (!m_hasAppliedOperatorPerspective || DriverStation.isDisabled()) {
-                DriverStation.getAlliance().ifPresent(allianceColor -> {
-                    setOperatorPerspectiveForward(
-                        allianceColor == Alliance.Red
-                            ? kRedAlliancePerspectiveRotation
-                            : kBlueAlliancePerspectiveRotation
-                    );
-                    m_hasAppliedOperatorPerspective = true;
-                });
-            }
-        }
     }
-
-    private MapleSimSwerveDrivetrain mapleSimSwerveDrivetrain = null;
 
     
-    @SuppressWarnings("unchecked")
-    private void startSimThread() {
-        mapleSimSwerveDrivetrain = new MapleSimSwerveDrivetrain(
-                this,
-                Seconds.of(kSimLoopPeriod),
-                Pounds.of(115),
-                Meters.of(0.858),
-                Meters.of(0.858),
-                DCMotor.getKrakenX60(1),
-                DCMotor.getKrakenX60(1),
-                1.7,
-                getModuleLocations(),
-                getPigeon2(),
-                getModules(),
-                TunerConstants.FrontLeft,
-                TunerConstants.FrontRight,
-                TunerConstants.BackLeft,
-                TunerConstants.BackRight);
+    // @SuppressWarnings("unchecked")
+    // private void startSimThread() {
+    //     mapleSimSwerveDrivetrain = new MapleSimSwerveDrivetrain(
+    //             this,
+    //             Seconds.of(kSimLoopPeriod),
+    //             Pounds.of(115),
+    //             Meters.of(0.858),
+    //             Meters.of(0.858),
+    //             DCMotor.getKrakenX60(1),
+    //             DCMotor.getKrakenX60(1),
+    //             1.7,
+    //             getModuleLocations(),
+    //             getPigeon2(),
+    //             getModules(),
+    //             TunerConstants.FrontLeft,
+    //             TunerConstants.FrontRight,
+    //             TunerConstants.BackLeft,
+    //             TunerConstants.BackRight);
 
-        resetPose(new Pose2d(
-            2.0,
-            2.0,
-            Rotation2d.fromDegrees(0)
-        ));
+    //     resetPose(new Pose2d(
+    //         2.0,
+    //         2.0,
+    //         Rotation2d.fromDegrees(0)
+    //     ));
 
-        /* Run simulation at a faster rate so PID gains behave more reasonably */
-        m_simNotifier = new Notifier(mapleSimSwerveDrivetrain::update);
-        m_simNotifier.startPeriodic(kSimLoopPeriod);
-    }
+    //     /* Run simulation at a faster rate so PID gains behave more reasonably */
+    //     m_simNotifier = new Notifier(mapleSimSwerveDrivetrain::update);
+    //     m_simNotifier.startPeriodic(kSimLoopPeriod);
+    // }
 
     public void updateInputs(SwerveIOInputs inputs) {
         var state = getState();
 
-        inputs.moduleStates = state.ModuleStates;
+        inputs.moduleStates = state.ModuleVelocities;
 
         inputs.timestamp = Utils.getCurrentTimeSeconds();
 
-        inputs.robotChassisSpeeds = state.Speeds;
+        inputs.robotChassisVelocities = state.Velocity;
         inputs.robotHeading = state.Pose.getRotation().getRadians();
 
         inputs.totalCurrent = 0.0;
@@ -485,24 +446,23 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     }
 
 
-    public void runVelocity(ChassisSpeeds speeds) {
+    public void runVelocity(ChassisVelocities speeds) {
         // discretize corrects for the robot rotating during the 20ms loop:
         // without it, translating + rotating simultaneously causes lateral drift
         // because the robot-relative velocity direction becomes stale mid-loop.
-        ChassisSpeeds discreteSpeeds = ChassisSpeeds.discretize(speeds, 0.02);
+        ChassisVelocities discreteSpeeds = speeds.discretize(0.02);
 
         // Use m_teleopApplyRobotSpeeds, NOT m_pathApplyRobotSpeeds.
         // The path follower leaves stale wheel-force feedforwards on m_pathApplyRobotSpeeds
         // after every path step. Those forces persist and override the velocity PID,
         // causing the robot to keep driving at path cruise speed even when commanded zero.
         setControl(
-            m_teleopApplyRobotSpeeds.withSpeeds(discreteSpeeds)
+            m_teleopApplyRobotSpeeds.withVelocity(discreteSpeeds)
         );
     }
 
     @Override
     public void resetPose(Pose2d pose) {
-        if (this.mapleSimSwerveDrivetrain != null) {mapleSimSwerveDrivetrain.mapleSimDrive.setSimulationWorldPose(pose);}
         super.resetPose(pose);
     }
 }

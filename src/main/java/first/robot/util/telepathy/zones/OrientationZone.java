@@ -1,0 +1,69 @@
+package first.robot.util.telepathy.zones;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.pathplanner.lib.path.ConstraintsZone;
+import com.pathplanner.lib.path.EventMarker;
+import com.pathplanner.lib.path.PointTowardsZone;
+import com.pathplanner.lib.path.RotationTarget;
+
+import org.wpilib.math.geometry.Pose2d;
+import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.math.geometry.Translation2d;
+import first.robot.util.Zone;
+
+/**
+ // *A zone where the robot continuously faces toward a target field pose,
+ // ?Application (REBUILT): always face the hub while on the alliance zone
+ */
+public class OrientationZone extends PathZone {
+
+    private final Pose2d target;
+    private final Rotation2d offset;
+
+    public OrientationZone(String name,Translation2d min,Translation2d max, Pose2d target) {
+        this(name, min, max, target, Rotation2d.ZERO);
+    }
+
+    //Constructor with offset.
+    public OrientationZone(String name, Translation2d min,Translation2d max, Pose2d target, Rotation2d offset) {
+        super(name, min, max);
+        this.target = target;
+        this.offset = offset;
+    }
+
+    public OrientationZone(String name, Zone zone, Pose2d target, Rotation2d offset) {
+        super(name, zone);
+        this.target = target;
+        this.offset = offset;
+    }
+
+    public OrientationZone(String name, Zone zone, Pose2d target) {
+        this(name, zone, target, Rotation2d.ZERO);
+    }
+
+    public Pose2d getTarget() {
+        return target;
+    }
+
+    public Rotation2d getOffset() {
+        return offset;
+    }
+
+    @Override
+    public List<RotationTarget> createRotationTargets(double entry, double exit) { return new ArrayList<>();}
+
+    @Override
+    public List<PointTowardsZone> createPointTowardsZones(double entry, double exit) { 
+        PointTowardsZone ptz = new PointTowardsZone(name, target.getTranslation(), offset, entry, exit);
+        return List.of(ptz);
+    }
+
+    @Override
+    public List<ConstraintsZone> createConstraintsZones(double entry, double exit) { return new ArrayList<>();}
+
+    @Override
+    public List<EventMarker> createEventMarkers(double entry, double exit) { return new ArrayList<>();}
+
+}

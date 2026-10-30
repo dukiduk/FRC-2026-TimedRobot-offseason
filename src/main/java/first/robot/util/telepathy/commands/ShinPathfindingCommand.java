@@ -1,0 +1,826 @@
+package first.robot.util.telepathy.commands;
+
+import static org.wpilib.units.Units.MetersPerSecond;
+
+import com.pathplanner.lib.commands.PathPlannerAuto;
+import com.pathplanner.lib.config.ModuleConfig;
+import com.pathplanner.lib.config.PIDConstants;
+import com.pathplanner.lib.config.RobotConfig;
+import com.pathplanner.lib.controllers.PPHolonomicDriveController;
+import com.pathplanner.lib.controllers.PathFollowingController;
+import com.pathplanner.lib.path.*;
+import com.pathplanner.lib.trajectory.PathPlannerTrajectory;
+import com.pathplanner.lib.util.*;
+//import org.wpilib.hardware.hal.FRCNetComm.tResourceType;
+import org.wpilib.hardware.hal.HAL;
+import org.wpilib.math.util.MathUtil;
+import org.wpilib.math.geometry.Pose2d;
+import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.math.kinematics.ChassisVelocities;
+import org.wpilib.math.system.DCMotor;
+import org.wpilib.units.measure.LinearVelocity;
+import org.wpilib.system.Timer;
+import org.wpilib.command2.Command;
+import org.wpilib.command2.Commands;
+import org.wpilib.command2.Subsystem;
+import first.robot.util.telepathy.zoro.ShinPathfinding;
+import first.robot.util.telepathy.events.EventSupervisor;
+import first.robot.util.telepathy.telemetry.PPLogging;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Arrays;
+import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
+
+// !PathfindingCommand does not let us do multistop pathfinding so this bad boy will be our replacement */
+// *ShinPathfindingCommand lets us include pathing through multiple stops to get to a goal */
+// *Furthermore, a ShinPathfindingCommand will act as a PathfindThenFollowPathCommand if given a PathPlannerPath in the constructor
+// ?In other words, this is a one-size-fits-all pathfinding command that also allows for multi-stop paths */
+
+public class ShinPathfindingCommand extends Command {
+
+  private static int instances = 0;
+
+  private final Timer timer = new Timer();
+  private final PathPlannerPath targetPath;
+  private boolean followingTargetPath = false;
+  private Pose2d targetPose;
+  private List<Pose2d> stopPoses;
+  private Pose2d originalTargetPose;
+  private GoalEndState goalEndState;
+  private final PathConstraints constraints;
+  private final Supplier<Pose2d> poseSupplier;
+  private final Supplier<ChassisVelocities> speedsSupplier;
+  private final BiConsumer<ChassisVelocities, DriveFeedforwards> output;
+  private final PathFollowingController controller;
+  private final RobotConfig robotConfig;
+  private final BooleanSupplier shouldFlipPath;
+  private final Subsystem[] requirements;
+
+  private PathPlannerPath currentPath;
+  private PathPlannerTrajectory currentTrajectory;
+
+  private double timeOffset = 0;
+  private EventSupervisor eventSupervisor;
+
+  private boolean finish = false;
+
+  /**
+   * Constructs a new base pathfinding command that will generate a path towards the given path.
+   *
+   * @param targetPath the path to pathfind to
+   * @param stopPoses the stops to pathfind through
+   * @param constraints the path constraints to use while pathfinding
+   * @param poseSupplier a supplier for the robot's current pose
+   * @param speedsSupplier a supplier for the robot's current robot relative speeds
+   * @param output Output function that accepts robot-relative ChassisVelocities and feedforwards for
+   *     each drive motor. If using swerve, these feedforwards will be in FL, FR, BL, BR order. If
+   *     using a differential drive, they will be in L, R order.
+   *     <p>NOTE: These feedforwards are assuming unoptimized module states. When you optimize your
+   *     module states, you will need to reverse the feedforwards for modules that have been flipped
+   * @param controller Path following controller that will be used to follow the path
+   * @param robotConfig The robot configuration
+   * @param shouldFlipPath Should the target path be flipped to the other side of the field? This
+   *     will maintain a global blue alliance origin.
+   * @param requirements the subsystems required by this command
+   */
+  public ShinPathfindingCommand(
+      PathPlannerPath targetPath,
+      List<Pose2d> stopPoses,
+      PathConstraints constraints,
+      Supplier<Pose2d> poseSupplier,
+      Supplier<ChassisVelocities> speedsSupplier,
+      BiConsumer<ChassisVelocities, DriveFeedforwards> output,
+      PathFollowingController controller,
+      RobotConfig robotConfig,
+      BooleanSupplier shouldFlipPath,
+      Subsystem... requirements) {
+        
+    this.requirements = requirements;
+    addRequirements(this.requirements);
+    
+
+    ShinPathfinding.ensureInitialized();
+
+    Rotation2d targetRotation = Rotation2d.ZERO;
+    double goalEndVel = targetPath.getGlobalConstraints().maxVelocityMPS();
+    if (targetPath.isChoreoPath()) {
+      // Can get() here without issue since all choreo trajectories have ideal trajectories
+      PathPlannerTrajectory choreoTraj = targetPath.getIdealTrajectory(robotConfig).orElseThrow();
+      targetRotation = choreoTraj.getInitialState().pose.getRotation();
+      goalEndVel = choreoTraj.getInitialState().linearVelocity;
+    } else {
+      for (PathPoint p : targetPath.getAllPathPoints()) {
+        if (p.rotationTarget != null) {
+          targetRotation = p.rotationTarget.rotation();
+          break;
+        }
+      }
+    }
+
+    this.targetPath = targetPath;
+    this.targetPose = new Pose2d(this.targetPath.getPoint(0).position, targetRotation);
+    this.originalTargetPose =
+        new Pose2d(this.targetPose.getTranslation(), this.targetPose.getRotation());
+    this.stopPoses = stopPoses;
+    this.goalEndState = new GoalEndState(goalEndVel, targetRotation);
+    this.constraints = constraints;
+    this.controller = controller;
+    this.poseSupplier = poseSupplier;
+    this.speedsSupplier = speedsSupplier;
+    this.output = output;
+    this.robotConfig = robotConfig;
+    this.shouldFlipPath = shouldFlipPath;
+    this.eventSupervisor = new EventSupervisor();
+
+    instances++;
+    HAL.reportUsage("ShinPathfindingCommand", instances, "Pathfinding to " + targetPath.getStartingDifferentialPose().toString());
+  }
+
+  /**
+   * Constructs a new base pathfinding command that will generate a path towards the given path.
+   *
+   * @param targetPath the path to pathfind to
+   * @param constraints the path constraints to use while pathfinding
+   * @param poseSupplier a supplier for the robot's current pose
+   * @param speedsSupplier a supplier for the robot's current robot relative speeds
+   * @param output Output function that accepts robot-relative ChassisVelocities and feedforwards for
+   *     each drive motor. If using swerve, these feedforwards will be in FL, FR, BL, BR order. If
+   *     using a differential drive, they will be in L, R order.
+   *     <p>NOTE: These feedforwards are assuming unoptimized module states. When you optimize your
+   *     module states, you will need to reverse the feedforwards for modules that have been flipped
+   * @param controller Path following controller that will be used to follow the path
+   * @param robotConfig The robot configuration
+   * @param shouldFlipPath Should the target path be flipped to the other side of the field? This
+   *     will maintain a global blue alliance origin.
+   * @param requirements the subsystems required by this command
+   */
+  public ShinPathfindingCommand(
+      PathPlannerPath targetPath,
+      PathConstraints constraints,
+      Supplier<Pose2d> poseSupplier,
+      Supplier<ChassisVelocities> speedsSupplier,
+      BiConsumer<ChassisVelocities, DriveFeedforwards> output,
+      PathFollowingController controller,
+      RobotConfig robotConfig,
+      BooleanSupplier shouldFlipPath,
+      Subsystem... requirements) {
+
+    this(
+        targetPath,
+        List.of(),
+        constraints,
+        poseSupplier,
+        speedsSupplier,
+        output,
+        controller,
+        robotConfig,
+        shouldFlipPath,
+        requirements
+    );
+  }
+
+  /**
+   * Constructs a new base pathfinding command that will generate a path towards the given path.
+   *
+   * @param targetPose the pose to pathfind to
+   * @param stopPoses the stops to pathfind through
+   * @param constraints the path constraints to use while pathfinding
+   * @param poseSupplier a supplier for the robot's current pose
+   * @param speedsSupplier a supplier for the robot's current robot relative speeds
+   * @param output Output function that accepts robot-relative ChassisVelocities and feedforwards for
+   *     each drive motor. If using swerve, these feedforwards will be in FL, FR, BL, BR order. If
+   *     using a differential drive, they will be in L, R order.
+   *     <p>NOTE: These feedforwards are assuming unoptimized module states. When you optimize your
+   *     module states, you will need to reverse the feedforwards for modules that have been flipped
+   * @param controller Path following controller that will be used to follow the path
+   * @param robotConfig The robot configuration
+   * @param shouldFlipPath Should the target path be flipped to the other side of the field? This
+   *     will maintain a global blue alliance origin.
+   * @param requirements the subsystems required by this command
+   */
+  public ShinPathfindingCommand(
+      Pose2d targetPose,
+      List<Pose2d> stopPoses,
+      PathConstraints constraints,
+      double goalEndVel,
+      Supplier<Pose2d> poseSupplier,
+      Supplier<ChassisVelocities> speedsSupplier,
+      BiConsumer<ChassisVelocities, DriveFeedforwards> output,
+      PathFollowingController controller,
+      RobotConfig robotConfig,
+      Subsystem... requirements) {
+
+    this.requirements = requirements;
+    addRequirements(this.requirements);
+
+    ShinPathfinding.ensureInitialized();
+
+    this.targetPath = null;
+    this.targetPose = targetPose;
+    this.stopPoses = stopPoses;
+    this.originalTargetPose =
+        new Pose2d(this.targetPose.getTranslation(), this.targetPose.getRotation());
+    this.goalEndState = new GoalEndState(goalEndVel, targetPose.getRotation());
+    this.constraints = constraints;
+    this.controller = controller;
+    this.poseSupplier = poseSupplier;
+    this.speedsSupplier = speedsSupplier;
+    this.output = output;
+    this.robotConfig = robotConfig;
+    this.shouldFlipPath = () -> false;
+    this.eventSupervisor = new EventSupervisor();
+
+    instances++;
+    HAL.reportUsage("ShinPathfindingCommand", instances, "Pathfinding to " + targetPath.getStartingDifferentialPose().toString());
+  }
+
+  /**
+   * Constructs a new base pathfinding command that will generate a path towards the given pose.
+   *
+   * @param targetPose the pose to pathfind to, the rotation component is only relevant for
+   *     holonomic drive trains
+   * @param constraints the path constraints to use while pathfinding
+   * @param goalEndVel The goal end velocity when reaching the target pose
+   * @param poseSupplier a supplier for the robot's current pose
+   * @param speedsSupplier a supplier for the robot's current robot relative speeds
+   * @param output Output function that accepts robot-relative ChassisVelocities and feedforwards for
+   *     each drive motor. If using swerve, these feedforwards will be in FL, FR, BL, BR order. If
+   *     using a differential drive, they will be in L, R order.
+   *     <p>NOTE: These feedforwards are assuming unoptimized module states. When you optimize your
+   *     module states, you will need to reverse the feedforwards for modules that have been flipped
+   * @param controller Path following controller that will be used to follow the path
+   * @param robotConfig The robot configuration
+   * @param requirements the subsystems required by this command
+   */
+  public ShinPathfindingCommand(
+      Pose2d targetPose,
+      PathConstraints constraints,
+      double goalEndVel,
+      Supplier<Pose2d> poseSupplier,
+      Supplier<ChassisVelocities> speedsSupplier,
+      BiConsumer<ChassisVelocities, DriveFeedforwards> output,
+      PathFollowingController controller,
+      RobotConfig robotConfig,
+      Subsystem... requirements) {
+    this(
+        targetPose,
+        List.of(),
+        constraints,
+        goalEndVel,
+        poseSupplier,
+        speedsSupplier,
+        output,
+        controller,
+        robotConfig,
+        requirements);
+  }
+
+  /**
+   * Constructs a new base pathfinding command that will generate a path towards the given pose.
+   *
+   * @param targetPose the pose to pathfind to, the rotation component is only relevant for
+   *     holonomic drive trains
+   * @param stopPoses the poses to pathfind through
+   * @param constraints the path constraints to use while pathfinding
+   * @param goalEndVel The goal end velocity when reaching the target pose
+   * @param poseSupplier a supplier for the robot's current pose
+   * @param speedsSupplier a supplier for the robot's current robot relative speeds
+   * @param output Output function that accepts robot-relative ChassisVelocities and feedforwards for
+   *     each drive motor. If using swerve, these feedforwards will be in FL, FR, BL, BR order. If
+   *     using a differential drive, they will be in L, R order.
+   *     <p>NOTE: These feedforwards are assuming unoptimized module states. When you optimize your
+   *     module states, you will need to reverse the feedforwards for modules that have been flipped
+   * @param controller Path following controller that will be used to follow the path
+   * @param robotConfig The robot configuration
+   * @param requirements the subsystems required by this command
+   */
+  public ShinPathfindingCommand(
+      Pose2d targetPose,
+      List<Pose2d> stopPoses,
+      PathConstraints constraints,
+      LinearVelocity goalEndVel,
+      Supplier<Pose2d> poseSupplier,
+      Supplier<ChassisVelocities> speedsSupplier,
+      BiConsumer<ChassisVelocities, DriveFeedforwards> output,
+      PathFollowingController controller,
+      RobotConfig robotConfig,
+      Subsystem... requirements) {
+    this(
+        targetPose,
+        stopPoses,
+        constraints,
+        goalEndVel.in(MetersPerSecond),
+        poseSupplier,
+        speedsSupplier,
+        output,
+        controller,
+        robotConfig,
+        requirements);
+  }
+
+  /**
+   * Constructs a new base pathfinding command that will generate a path towards the given pose.
+   *
+   * @param targetPose the pose to pathfind to, the rotation component is only relevant for
+   *     holonomic drive trains
+   * @param constraints the path constraints to use while pathfinding
+   * @param goalEndVel The goal end velocity when reaching the target pose
+   * @param poseSupplier a supplier for the robot's current pose
+   * @param speedsSupplier a supplier for the robot's current robot relative speeds
+   * @param output Output function that accepts robot-relative ChassisVelocities and feedforwards for
+   *     each drive motor. If using swerve, these feedforwards will be in FL, FR, BL, BR order. If
+   *     using a differential drive, they will be in L, R order.
+   *     <p>NOTE: These feedforwards are assuming unoptimized module states. When you optimize your
+   *     module states, you will need to reverse the feedforwards for modules that have been flipped
+   * @param controller Path following controller that will be used to follow the path
+   * @param robotConfig The robot configuration
+   * @param requirements the subsystems required by this command
+   */
+  public ShinPathfindingCommand(
+      Pose2d targetPose,
+      PathConstraints constraints,
+      LinearVelocity goalEndVel,
+      Supplier<Pose2d> poseSupplier,
+      Supplier<ChassisVelocities> speedsSupplier,
+      BiConsumer<ChassisVelocities, DriveFeedforwards> output,
+      PathFollowingController controller,
+      RobotConfig robotConfig,
+      Subsystem... requirements) {
+    this(
+        targetPose,
+        constraints,
+        goalEndVel.in(MetersPerSecond),
+        poseSupplier,
+        speedsSupplier,
+        output,
+        controller,
+        robotConfig,
+        requirements);
+  }
+
+
+  /**
+   * Constructs a new base pathfinding command that will generate a path towards the given pose.
+   *
+   * @param targetPose the pose to pathfind to, the rotation component is only relevant for
+   *     holonomic drive trains
+   * @param constraints the path constraints to use while pathfinding
+   * @param poseSupplier a supplier for the robot's current pose
+   * @param speedsSupplier a supplier for the robot's current robot relative speeds
+   * @param output Output function that accepts robot-relative ChassisVelocities and feedforwards for
+   *     each drive motor. If using swerve, these feedforwards will be in FL, FR, BL, BR order. If
+   *     using a differential drive, they will be in L, R order.
+   *     <p>NOTE: These feedforwards are assuming unoptimized module states. When you optimize your
+   *     module states, you will need to reverse the feedforwards for modules that have been flipped
+   * @param controller Path following controller that will be used to follow the path
+   * @param robotConfig The robot configuration
+   * @param requirements the subsystems required by this command
+   */
+  public ShinPathfindingCommand(
+      Pose2d targetPose,
+      List<Pose2d> stopPoses,
+      PathConstraints constraints,
+      Supplier<Pose2d> poseSupplier,
+      Supplier<ChassisVelocities> speedsSupplier,
+      BiConsumer<ChassisVelocities, DriveFeedforwards> output,
+      PathFollowingController controller,
+      RobotConfig robotConfig,
+      Subsystem... requirements) {
+    this(
+        targetPose,
+        stopPoses,
+        constraints,
+        0.0,
+        poseSupplier,
+        speedsSupplier,
+        output,
+        controller,
+        robotConfig,
+        requirements);
+  }
+
+  /**
+   * Constructs a new base pathfinding command that will generate a path towards the given pose.
+   *
+   * @param targetPose the pose to pathfind to, the rotation component is only relevant for
+   *     holonomic drive trains
+   * @param constraints the path constraints to use while pathfinding
+   * @param poseSupplier a supplier for the robot's current pose
+   * @param speedsSupplier a supplier for the robot's current robot relative speeds
+   * @param output Output function that accepts robot-relative ChassisVelocities and feedforwards for
+   *     each drive motor. If using swerve, these feedforwards will be in FL, FR, BL, BR order. If
+   *     using a differential drive, they will be in L, R order.
+   *     <p>NOTE: These feedforwards are assuming unoptimized module states. When you optimize your
+   *     module states, you will need to reverse the feedforwards for modules that have been flipped
+   * @param controller Path following controller that will be used to follow the path
+   * @param robotConfig The robot configuration
+   * @param requirements the subsystems required by this command
+   */
+  public ShinPathfindingCommand(
+      Pose2d targetPose,
+      PathConstraints constraints,
+      Supplier<Pose2d> poseSupplier,
+      Supplier<ChassisVelocities> speedsSupplier,
+      BiConsumer<ChassisVelocities, DriveFeedforwards> output,
+      PathFollowingController controller,
+      RobotConfig robotConfig,
+      Subsystem... requirements) {
+    this(
+        targetPose,
+        constraints,
+        0.0,
+        poseSupplier,
+        speedsSupplier,
+        output,
+        controller,
+        robotConfig,
+        requirements);
+  }
+
+  @Override
+  public void initialize() {
+    currentTrajectory = null;
+    eventSupervisor.end();
+    timeOffset = 0;
+    finish = false;
+    followingTargetPath = false;
+
+    Pose2d currentPose = poseSupplier.get();
+
+    controller.reset(currentPose, speedsSupplier.get());
+
+    if (targetPath != null) {
+      originalTargetPose =
+          new Pose2d(this.targetPath.getPoint(0).position, originalTargetPose.getRotation());
+      if (shouldFlipPath.getAsBoolean()) {
+        targetPose = FlippingUtil.flipFieldPose(this.originalTargetPose);
+        goalEndState = new GoalEndState(goalEndState.velocityMPS(), targetPose.getRotation());
+      }
+    }
+
+    if (currentPose.getTranslation().getDistance(targetPose.getTranslation()) < 0.5) {
+      output.accept(new ChassisVelocities(), DriveFeedforwards.zeros(robotConfig.numModules));
+      finish = true;
+    } else {
+      ShinPathfinding.setStartPosition(currentPose.getTranslation());
+      ShinPathfinding.setStartRotation(currentPose.getRotation());
+      ShinPathfinding.setStops(stopPoses);
+      if (!stopPoses.isEmpty()) {
+        PPLogging.logStopPoses(stopPoses);
+      }
+
+      ShinPathfinding.setGoalPosition(targetPose.getTranslation());
+    }
+  }
+
+  @Override
+  public void execute() {
+    if (finish) {
+      return;
+    }
+    
+    Pose2d currentPose = poseSupplier.get();
+    ChassisVelocities currentSpeeds = speedsSupplier.get();
+
+    PPLogging.logCurrentPose(currentPose);
+    PPLibTelemetry.setCurrentPose(currentPose);
+
+    // Skip new paths if we are close to the end
+    boolean skipUpdates =
+        currentTrajectory != null
+            && currentPose
+                    .getTranslation()
+                    .getDistance(currentTrajectory.getEndState().pose.getTranslation())
+                < 2.0;
+
+    //Folow targetPath if we are done pathfinding to there
+    if (targetPath != null && !followingTargetPath && currentTrajectory != null
+    && timer.hasElapsed(currentTrajectory.getTotalTimeSeconds() - timeOffset)) {
+        followingTargetPath = true;
+        currentPath = shouldFlipPath.getAsBoolean()
+                ? targetPath.flipPath()
+                : targetPath;
+
+        currentTrajectory =
+                new PathPlannerTrajectory(
+                        currentPath,
+                        speedsSupplier.get(),
+                        poseSupplier.get().getRotation(),
+                        robotConfig);
+        
+        eventSupervisor.end();
+        eventSupervisor.initialize(currentTrajectory);
+
+        var eventReqs = EventSupervisor.getSchedulerRequirements(this.currentPath);
+        if (!Collections.disjoint(Arrays.asList(requirements), eventReqs)) {
+          throw new IllegalArgumentException(
+              "Events that are triggered during path following cannot require the drive subsystem");
+        }
+
+        PathPlannerAuto.setCurrentTrajectory(currentTrajectory);
+        PathPlannerAuto.currentPathName = currentPath.name;
+
+        controller.reset(poseSupplier.get(), speedsSupplier.get());
+
+        timer.reset();
+        timer.start();
+        timeOffset = 0;
+
+        PPLogging.logActivePath(currentPath);
+        PPLibTelemetry.setCurrentPath(currentPath);
+    }
+
+    if (!skipUpdates && ShinPathfinding.isNewPathAvailable()) {
+      currentPath = ShinPathfinding.getCurrentPath(constraints, goalEndState);
+
+      if (currentPath != null) {
+
+        currentTrajectory =
+            new PathPlannerTrajectory(
+                currentPath, currentSpeeds, currentPose.getRotation(), robotConfig);
+        eventSupervisor.end();
+        
+        if (!followingTargetPath) {
+          var eventReqs = EventSupervisor.getSchedulerRequirements(this.currentPath);
+          if (!Collections.disjoint(Arrays.asList(requirements), eventReqs)) {
+            throw new IllegalArgumentException(
+                "Events that are triggered during path following cannot require the drive subsystem");
+          }
+        }
+
+        eventSupervisor.initialize(currentTrajectory);
+
+        PathPlannerAuto.setCurrentTrajectory(currentTrajectory);
+        PathPlannerAuto.currentPathName = "Pathfinding";
+
+        if (!Double.isFinite(currentTrajectory.getTotalTimeSeconds())) {
+          finish = true;
+          return;
+        }
+
+        // Find the two closest states in front of and behind robot
+        int closestState1Idx = 0;
+        int closestState2Idx = 1;
+        while (closestState2Idx < currentTrajectory.getStates().size() - 1) {
+          double closest2Dist =
+              currentTrajectory
+                  .getState(closestState2Idx)
+                  .pose
+                  .getTranslation()
+                  .getDistance(currentPose.getTranslation());
+          double nextDist =
+              currentTrajectory
+                  .getState(closestState2Idx + 1)
+                  .pose
+                  .getTranslation()
+                  .getDistance(currentPose.getTranslation());
+          if (nextDist < closest2Dist) {
+            closestState1Idx++;
+            closestState2Idx++;
+          } else {
+            break;
+          }
+        }
+
+        // Use the closest 2 states to interpolate what the time offset should be
+        // This will account for the delay in pathfinding
+        var closestState1 = currentTrajectory.getState(closestState1Idx);
+        var closestState2 = currentTrajectory.getState(closestState2Idx);
+
+        double d =
+            closestState1.pose.getTranslation().getDistance(closestState2.pose.getTranslation());
+        double t =
+            (currentPose.getTranslation().getDistance(closestState1.pose.getTranslation())) / d;
+        t = Math.clamp(t, 0.0, 1.0);
+
+        timeOffset = MathUtil.lerp(closestState1.timeSeconds, closestState2.timeSeconds, t);
+
+        // If the robot is stationary and at the start of the path, set the time offset to the next
+        // loop
+        // This can prevent an issue where the robot will remain stationary if new paths come in
+        // every loop
+        if (timeOffset <= 0.02
+            && Math.hypot(currentSpeeds.vx, currentSpeeds.vy) < 0.1) {
+          timeOffset = 0.02;
+        }
+
+        PPLogging.logActivePath(currentPath);
+        PPLibTelemetry.setCurrentPath(currentPath);
+      }
+
+      timer.reset();
+      timer.start();
+    }
+
+    if (currentTrajectory != null) {
+      double currentTime = timer.get() + timeOffset;
+      var targetState = currentTrajectory.sample(currentTime);
+
+      ChassisVelocities targetSpeeds =
+          controller.calculateRobotRelativeSpeeds(currentPose, targetState);
+
+      double currentVel =
+          Math.hypot(currentSpeeds.vx, currentSpeeds.vy);
+
+      PPLibTelemetry.setCurrentPose(currentPose);
+      PPLogging.logCurrentPose(currentPose);
+
+      PPLibTelemetry.setTargetPose(targetState.pose);
+      PPLogging.logTargetPose(targetState.pose);
+
+      PPLibTelemetry.setVelocities(
+        currentVel,
+        targetState.linearVelocity,
+        currentSpeeds.omega,
+        targetSpeeds.omega
+      );
+
+      PPLogging.logVelocities(
+        currentVel, 
+        targetState.linearVelocity,
+        currentSpeeds.omega, 
+        targetSpeeds.omega
+      );
+
+      output.accept(targetSpeeds, targetState.feedforwards);
+      eventSupervisor.execute(currentTime);
+    }
+  }
+
+  @Override
+  public boolean isFinished() {
+    if (finish) {
+      return true;
+    }
+
+    if (currentTrajectory != null && (followingTargetPath == (targetPath != null))) {
+      return timer.hasElapsed(currentTrajectory.getTotalTimeSeconds() - timeOffset);
+    }
+
+    return false;
+  }
+
+  @Override
+  public void end(boolean interrupted) {
+    timer.stop();
+
+    // Only output 0 speeds when ending a path that is supposed to stop, this allows interrupting
+    // the command to smoothly transition into some auto-alignment routine
+    if (!interrupted && goalEndState.velocityMPS() < 0.1) {
+      output.accept(new ChassisVelocities(), DriveFeedforwards.zeros(robotConfig.numModules));
+    }
+
+    PPLogging.logActivePath(null);
+    PPLogging.logStopPoses(null);
+    eventSupervisor.end();
+  }
+
+  /**
+   * Create a command to warmup the pathfinder and pathfinding command
+   *
+   * @return Pathfinding warmup command
+   */
+  public static Command warmupCommand() {
+    return new ShinPathfindingCommand(
+            new Pose2d(3.0, 3.0, Rotation2d.k180deg),
+            new PathConstraints(4, 3, 4, 4),
+            () -> new Pose2d(1.5, 4, Rotation2d.ZERO),
+            ChassisVelocities::new,
+            (speeds, feedforwards) -> {},
+            new PPHolonomicDriveController(
+                new PIDConstants(5.0, 0.0, 0.0), new PIDConstants(5.0, 0.0, 0.0)),
+            new RobotConfig(
+                75,
+                6.8,
+                new ModuleConfig(
+                    0.048, 5.0, 1.2, DCMotor.getKrakenX60(1).withReduction(6.14), 60.0, 1),
+                0.55))
+        .andThen(Commands.print("[PathPlanner] ShinPathfindingCommand finished warmup"))
+        .ignoringDisable(true);
+  }
+}
+
+/*
+
+ .  ..   ....... . ..... .......  .   .  ...     ...      ........   .....  .   .....      ......     .....    .. ..      .....      ......     ......   .
+                        .. .                           .                 .                                    .                    .  .                 . 
+   . ..................... ........   ........    .......   .......  ........  ..          .        ..      .  .     ..             .. .      ..     ..  .
+ .  ...  .    .    ...  .. ..       .           .....    ..        .             .                           .         .                               .  
+    . ...  .        ... .           .         . .       . .       ...                         .         .    .                          .         .    .  
+    .....       . . . ......                             ..              ................ . ..                              .. .      ..                  
+     ....   ..   .. ....   ..  .. ..                ..        ..        ......@+.:.....%.                                                                 
+  .          .       ..                                     .         . ...%:...........=.. .    . .. .. ........ ..           .        .. .  ..  .     . 
+.... .........   .................  .......... ........ .................@:..............+.......  . @.:....::..+@.....    .  ...   .. ....   ........... 
+        .  ...     ..                    ...       .                  ..%:................:%...........%:-%.....::-..          .      .             .    .
+       ..         ...   ..           ..     ..     .  ..          .   .@@:--..+........:.....%....=:......@.*......:.. .    ..         ...       ...      
+... ................................................... ......... ....@................%......%..@..........:......:*. ............................... ...
+.. ..   .. .     .....      .  .        ..      .    .        .    ..:....:.@..................+:....................@...      ..  ..        . .... .   . 
+    ...  .    .......    ...   .         ...       ...  ..   ...  ..-@-..............:.......:@.:....@...............=.  ..... ..  ......... ...    . .  .
+ . ..  .....     ....      .... ........   ............  .   .. ...%................:.......-.........@......@.....:@. .  .......  ....      .  ...       
+            ..     ..   .   .     ..            .       .          *:..............@.......@:........@.......+.....:.    ..                   ...       ..
+     .         .  .     .     .      .   .      .....            .. #..........:.+......:.......%%=@.......:@.%....:.                  .         .      . 
+ ............................     .............. .:...  ...        . .-=.:....%#..@......=................:=......=..   ..  .....     .....      ....     
+.                                           .....@=:.                  .  ....    .-@@@::.@..............-........@ ...                                   
+                                 .          ....*==+..                     .      .@.......::...........@.........:@ ... .                 .              
+..  .. .......... ..............................=+==@.................. ...........-..........-@::.:*@:...........:.@ ......  ........ ......... .........
+       .    ..     ..  .                  ..  .=====+=..                          .+..............=.@................-@:..   . .       .            .    .
+  ..    .        .... ....   .....    .   ...========+.. .      ..                .*...............:=....@::.:#::.....::#.....         ...        ..      
+............................. .@............*=========+.............................=...........#....*..*:......:=.......*@@:.............................
+.. ..   ......................:=+      ....@======@+====...  ..         .       .. .@.........::.....+#:.........%........#..:@.   .. ...... . .......   .
+    .......       .          .@++...  ...-==+==@==%+==+=+.........  .. . .  .   .....:......=@.......:............:...........--.  .....    .         .   
+   .   .. . ..   ..   ..   ...=+=@......+==+=++++=%==*====...@.@.. ...   ...   ..  ..%............:=..................%..........   ....        ..  .   ..
+ .     ..  ...             ..@+=++.....====+=+#+++===+#=+=+..=#%=....       ..     ...............%...................::.......*..             .          
+                   .       ..=*===+. -======+@===@=====%===+%=+%== ..              .*............#...................@.........%.     ..         .        
+....... .  ...... . ........@=@====*@========++=%==========%==+#==+..       ..... ...%:............................:............@..... .. .      ....     
+                          .==+==+=++========%==@===+======#====+===*..              ..:.........-...............:..:..............:%...                  .
+                       ....=======#=++@====++=@====+===++@====@+=@==+.  .. ...  ......#.........@@-@-:...........:...................:..   . ..        .. 
+..  .. .......... ........++=+==+#+=++#+===+===============@=@==+@===.. ..@.....=: .. :@.............:......:%.:........%.:..........@.......... .........
+       .   ...     .. ...#===@=+=*=@======+@+%=====+======%%+++==@===..%....-.....@...@.::@......:..........::::*.....@:.............:=..        .. .    .
+        .          .  ..@===+@====++==+===#+@======*======*=%=%=====@.:.....:......@#-....+@:.::.%...........@..:.@.@.:..................         .       
+. ......................==+==*=========%=@=++=*====%=======#====*=*....=...........:*::...:::.%-.:==........@.....-+..................:.... ..............
+          . ....... ...@====+#==%+======@==@+%=+===@+=====@====**%.....@....%.....=....%.........@.:.=@..:+.....%@...............@.......#. .... .  ..   .
+       ..  . ..=... . .+=====#+@+++=%===+%++=#==*==#=====@====+++:.....::.........:.....@:.........-*......::......@............=:@-.....-...         .   
+       ..   ...@=@....#=+====%=+%===%===+=%=@=+==*=====+@===+===+........*:@.....:...................-.:.:.=.@:....:%:.......:@..........@#@......        
+.  .   ..     .+=+=...-+==+==@%=@===%======@+=====@+===@==+=@===@-...........:.#..........@...........#-..@..........@@:.....-..........:@####..          
+    .. ..    ...#+==*..+=+@==+======*=====+=====+=+==+*=+=======@=@.:.......:@@...........=...........:.%.@...........%:...:.:..........*.*###- .         
+ .  .....  .....@=++=++%==@@=*++-==+*+==+++========@%======%====%==+%....@-:..:...........:..............@-@..............%::.:...........####@ . ...     
+  ...   ....  . =++#===+++@=*@==%+==@===+++=+=====+====#+=======@===#..@%=::...:..........................:-:%...:.:....-:.:..............#####...        
+               ..@+=%=====@===@++++=*===*===%======+@=====%=====%===::%::.::::#.:@..........................@...........:...:.............######%.. ..    
+. ............. .@++=%+===%==+++**++===@+===%=+====+#=%==+=====+====@:.:::::::::.+-:@.%@.:................:.::@.........................%%########@.......
+ ..        ...  ..===+*==+%======++=+%#==+==*=%+======*=+===========..:+::::::::::.@...::.@................:::.-.....................###############@.. . 
+      . .  .   ...@+======*=====+=+=@==+===++++=====+===++=====@===@:::::::::::.@::*.........@:....:@::####:.#..#@................%##################@....
+     ..          ..#=+=+=#==+========*+====+*@+======@=%==+===*+==++%:::::::::::::%........:...........-*####:=...#*........:..@######################%.. 
+       ..      . ...%+======++=======%=====+#========+%===+==+====+@:::::::::::::::%:....................#@###*=.:..#%###%@+@##########################.. 
+       ..  ...  .....%==+=++=+=+==+=================+@+====++*==+#.::::::::::::::::::.....:...............@###########################################@.  
+       ..   ..   ......@++++===#==*=+=%+===#===+===@===+========+..%::::::::::::::::%..::@................@###########################################....
+.  ..  ..    ..  ........@+*=+=++%=#+++#=+%======+=+@=.:...*=@%:@:::::::::::::::::::#:::@.................:#########################################%.. ..
+    .  ..        ...%+=++++%=@=+====+@==%===========@:.....%+@.@#:::@:::::::::::::::::.%:..................@########################################..    
+ . ...................@=====+#=@===+=+=%===+======+=@......-@.%.:#:..::::::::::::::::%.@...................:@####################################*.@..    
+.   ....................@==*+==#=%++======*==+====+=@.........:.::*::@:::::::::::::::::#...................:.:@################################%..:-......
+        .     .     ... ...*+=@+=++=+*===*+@#.%=====:.%...#=*...-@:::::::::::::::::::::@:.....................::############################@:....@ .     
+. . ...............#@@@%==+..@==#==@:.:.::.....*====....:==*=:.+:::::.*.:::::::::::::::*#:......................:::.%################%@=........:@........
+ .   ...@====================@..#=++@..........:%=+=..:*==.....*::::::.@::::::::::::::::%..*.....................:*.....=#+=...................%. .       
+   .  ..+======================#*...@@:==@...@*.:++@.@=*+-@....+:::::::#%:::::::::::::::::+:.:=@:.........:.::....#:*@=..:..............:..:@....      ...
+..    ..@=-===============%@+%%====#@.:%::@=+=....=@#:.@.#:....:::::.:@####-:.:::.:::::::::=..::#@-:.:-#%%*...:......:.:@:#:.....::@.%=...... . .. .. .   
+       .... %@========================@::-*:@.@*#=@.:..@......-.@::::.@######:..:=%::::::::::.::::.@######@.............@@:..@.:.*+.....         .        
+       .  %%%%%%%%%@===+====@========@-:.:::@.#.....:.....:..%..::::::@######@.:::::::::::::.::::.@############%%@@##%.... ...... .   ..   .    .         
+    ....@%%%%%%%%@@@#=-+@#========-=====@::::::#.:@.@.@:-..#::.@...@::+#######@::.::::::..:@:::::#####################@...   . .       .  .    ...        
+.     .@===================================%=:*:::#@%:..:.@:*@*:...:.+@@###########@%=@@###############################..         ..      . ..            
+    ....@=============================+=%:===@##::@#@:..::#....*........@##############################################=.    .         .                  
+ .......+=============#@...... ..%#.....@...%####%@###.::.:@:...@...+......@##########################################%. .  ...       ....        ...     
+. ......@=========@-.......   ..@..#....%.@@.@##########:@.@....@@=::......:..:@######################################-...............  ...  ...  ...  ...
+     ...@=====#%.......   .... ..%..-....+*@.=+####@####=::.......=................:=@@@@@@@@@%%%###@################@........... ........................
+    . .%==%%....  ...     .     .@...:..%:::.:@####@####@:%-......:.:..#@:......:+%................+:..:.......-@@###=.. .    ...       .           .     
+....  @@:............ .. ........=........=*..%###@@####@#@===:.....:.......:............:......@::..:# . .. ... ...@ ............. .... .................
+     ....      ..         ...   . ..@....@..-.:@...@####@...@===##%@=--%@...:-#+:-:......@:-@%@.....*=..     ..    ..        .                         .. 
+..  .                  %........ #...:@:..%... ..  .@###@.....@===@=.%@@@:@=::........-..:=:#@:.:#@==@..  ..        ..     .   ..    ...        .  ..     
+       ..        .. . ...=@-. ..@===...=.....   .....=@@..........@@===*:.:.-...:..::.....@.....@==%=@.           .         .....     ..   ..             
+       ..  ..    ..   ...:======*====@..... ....@....**@@@@@@....@@@==@====@...........:....:%+=#===@@..    .    .  .      .  ...     ..   .    .     .   
+    .. ..   ..   .... .....%=======*====@*=.....#@@@@@+.....+%@@@+...%.@@========@+#@@@@@@@=====@=====..          ...       .. .      ..  .   ....        
+.       .                 ..@==-@====%=#.......#@........@............=...#*====*****#*#%%%@=======@-.@..    ..                                           
+ .  .. ..  .  ......    ......#===*==@=%@@=..............@.-@#................@*=@@===========%@+=#===@:                    ..         .                  
+ .. .....  ...   ..  ...   .....%@.........................-@=-...@........=......-%@@@@%@=======++...%....       ..     .  ...       ..          ...     
+...  ...    .......   .. ......:................................-%..........@.............-............@. .  .... ...  ........  .....  ...  ...  ...  ...
+  .  . .......................-....................................%+......:.-%....=.......*...%.......=......... . ........ .... .... ........    .......
+           ....    .....   ..:.......................................@@.......=:...@.................... .                     .                          
+      ..... ..     ..  .   .#....................................:......=...@..:.@.=........:...............    ... .          ....              .....    
+      .    .  ...      . @.........................................@=.....:..-..#:.@..................@..    ..                                        .  
+     ..  ...       ..  @-..............................................@....:...@.+@..................+.  ..        ..   . .    .                   .     
+       ..    ..  .. .@:...................................................*-..@.@.-..................%.                        ..     ..         .        
+.      ..  ...    ..#.......................................................:-..*.*...@............@:...   ..       .          ..      .   .         ..   
+   .. ..     .   .+.........................................................#@.@.+...............+......          .   .     .. .      ..  .    ...   .. . 
+        .       .+.................................................#@.:....#@...=....:.........@......                             ..                     
+    ... .   ... .@......................................................=:  .##....@:...............=.. .                   ...   .    .          .       
+.    .  .  .   ..+.........................................................@..#..@.................@=.   ..       .                               .       
+...   ..... .. ..=...................................................#. ...*...#.....:..............+.  ...                 ...   .... .... ....   .. ....
+.  ..............+.................................................#%. .. .@....................#..@..   ....                .... .... .........   .......
+     ............@......................................=+%@@*:..#..@.  ..@....@...............@..*.. ....                  ...   .......  ...   ..  .....
+               ..@..................................................=.  .@.*....:.............@..#@..  ...                  ..  ...    ..  ...   ..     ..
+    .....  .  ...@............................................@.....*  .*..%.....%..............@.@..  ..                  ...  ..         .     ... ..   
+   .  .  .. ..   .@..........................................@.@:...@ ..@..@..................@...@.... ...                 ..... .     .... ..  .....   .
+. .  ......   . ....@......................................=..@.........@..@........:.......@.....-.....                    .. ..     ..  .     ..  .     
+.. ..  .....  .  .. ..@...................................@..#.....%....@.............=...%.......*                   .       .. .                 ..     
+.. .    .  ........  ..@@...............................#...@..:@+*.+...@...%....................@.......            ..   ...... . ......  .  .......   ..
+  .... ...  .......  ...@.+..........................%@..#.@+@%%%@*.....%....:............@.....@.    ..              .     ..  ..   ...  ...   ..   .    
+........ .... .......... ...@................@@@:...@..-...@%%%%%=-.%*..=..@...@.............=-*.........              .... ......... ....................
+.  ...  ..      . .  . .  @..@...................@..*:....@%%%%%@=.%.*..........-..........%...@ ..  .                          .              .        ..
+... ..  .      ..    ... ..*..-...................+......%%%%%%%=%.@..@.....@............@....@..........        .  ............. .........  .............
+......  ............... .....@...................@.....+%%%%%%%@@.....%......@........+....@.:. ........        .. .... .........  .... .... . ....... ...
+.   .   .. .. ..     .  .   .... .@.....#@=.....@.....=..%%%%%@+.. ...@.......-.....@...@:..@                  ..   .    .              .  .              
+                       ..     . .  .*@@%.......@....@.   .@%%%:...  .@=*....+%*@@@....@...=@..                 .   .. ...                       ..        
+..  .. .  ... .....    ..   ....  .. .... .......%--..  ...=@@..  ..=======@........@:...=.....  .    ..          .   ..  .  . ...         .  .  ..  .... 
+      ..     . ..  . ...    ..  ..        ..  ......    ......     .+=@====@.....:@.....@..  ..  .              ..           .      .   . ..             .
+.  .  ...      .. ... .   . ....      .    .  .         .... .    .@==++===@. -@.. ......    .  ..   ...      ..  ...       .....  .  ...    .  ...       
+ . ................  . .  . .   .       .   .  .. ....      ..... @%%%@@%@...  ....   ..          ..          .       .       ..               .   ..     
+..      ...   ..    . .   . .  ...   ..     .. .. .       .  . ..@%%%%%@.  .         ..  ..      ... .        ..     ..      .     .. .. ...    .         
+  ..... ..... ....      ..... ....        ..     .. ..    . ....@%%%%%#.... . ....                           .     .    . .  .        ..   ..            .
+ .. ..... ................ ..        ...  ..   ..   ..         *%%%%@%..       ..   .    ..  ..    .... ... .  ..    ..  ..       ....  ..   .   ..      .
+.   .                . .  ... ...                           . .%%%@:..           .      ..           ..          ....       .        .. .   . ..   ..     
+.       .  ..   ....          ..     ..                      .@@+..   .                       ....        .    .          ..  . .  . .  .         ..      
+.         ...      .                        ...  .    . ....  ..     ..            ....  . .                  ..    ..       .     ..     .  .   ....   ..
+
+
+*/

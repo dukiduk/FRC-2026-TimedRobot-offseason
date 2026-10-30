@@ -21,7 +21,7 @@ public interface SwerveIO {
         public double timestamp;
 
         /** Robot chassis speeds (vx, vy, omega). */
-        public ChassisVelocities robotChassisSpeeds;
+        public ChassisVelocities robotChassisVelocities;
 
         /** Robot heading in radians (from Pose rotation). */
         public double robotHeading;

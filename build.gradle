@@ -78,6 +78,9 @@ dependencies {
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    def advantageKit = new groovy.json.JsonSlurper().parse(file('vendordeps/AdvantageKit.json'))
+    annotationProcessor "org.littletonrobotics.akit:akit-autolog:${advantageKit.version}"
 }
 
 test {
@@ -104,4 +107,9 @@ jar {
 // Configure string concat to always inline compile
 tasks.withType(JavaCompile) {
     options.compilerArgs.add '-XDstringConcat=inline'
+}
+
+task(replayWatch, type: JavaExec) {
+    mainClass = "org.littletonrobotics.junction.ReplayWatch"
+    classpath = sourceSets.main.runtimeClasspath
 }

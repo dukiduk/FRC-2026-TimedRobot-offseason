@@ -1,0 +1,69 @@
+package first.robot.util.telepathy.zones;
+
+import org.wpilib.command2.Command;
+import first.robot.util.Zone;
+import org.wpilib.math.geometry.Translation2d;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.pathplanner.lib.auto.NamedCommands;
+import com.pathplanner.lib.auto.CommandUtil;
+import com.pathplanner.lib.path.ConstraintsZone;
+import com.pathplanner.lib.path.EventMarker;
+import com.pathplanner.lib.path.PointTowardsZone;
+import com.pathplanner.lib.path.RotationTarget;
+
+/**
+ // *A zone where the robot activates a certain NamedCommand
+ // ?Application (REBUILT): activating the robot's intake when going to the neutral zone
+ * 
+ // !EventZones must use NamedCommands rather than just commands
+ // !so that our pathfinder can properly retrieve the event markers during log replay
+ */
+public class EventZone extends PathZone {
+
+    private final Command command;
+
+    //Register an EventZone
+    public EventZone(String name, Translation2d min, Translation2d max, Command command) {
+        super(name, min, max);
+        this.command = CommandUtil.wrappedEventCommand(command);
+    }
+
+    //Register an EventZone through a NamedCommand
+    public EventZone(String name, Translation2d min, Translation2d max, String namedcommand) {
+        super(name, min, max);
+        this.command = NamedCommands.getCommand(namedcommand);        
+    }
+
+    public EventZone(String name, Zone zone, Command command) {
+        super(name, zone);
+        this.command = CommandUtil.wrappedEventCommand(command);
+    }
+
+    public EventZone(String name, Zone zone, String namedcommand) {
+        super(name, zone);
+        this.command = NamedCommands.getCommand(namedcommand);
+    }
+
+    public Command getEvent() {
+        return command;
+    }
+
+    @Override
+    public List<RotationTarget> createRotationTargets(double entry, double exit) { return new ArrayList<>();}
+
+    @Override
+    public List<PointTowardsZone> createPointTowardsZones(double entry, double exit) { return new ArrayList<>();}
+
+    @Override
+    public List<ConstraintsZone> createConstraintsZones(double entry, double exit) { return new ArrayList<>();}
+
+    @Override
+    public List<EventMarker> createEventMarkers(double entry, double exit) { 
+        EventMarker em = new EventMarker(name, entry, exit, command);
+        return List.of(em);
+    }
+
+}
