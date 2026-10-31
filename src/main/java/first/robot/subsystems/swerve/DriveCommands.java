@@ -109,7 +109,7 @@ public class DriveCommands {
         double translation = y * DriveConstants.kMaxSpeed;
         double turn = omega * DriveConstants.kMaxAngularRate;
 
-        return DriveConstants.driveRequest
+        return CommandSwerveDrivetrain.driveRequest
                 .withVelocityX(forward)
                 .withVelocityY(translation)
                 .withRotationalRate(turn);

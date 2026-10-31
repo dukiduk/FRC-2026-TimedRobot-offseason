@@ -45,27 +45,11 @@ public final class Constants {
         REPLAY
     }
 
-    // *Constants for the drivetrain
+    // *Drive constants
     public static class DriveConstants {
 
         public static final double kMaxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
         public static final double kMaxAngularRate = RotationsPerSecond.of(.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
-
-        public static final SwerveRequest.FieldCentric driveRequest = new SwerveRequest.FieldCentric()
-            .withDeadband(kMaxSpeed * 0.1).withRotationalDeadband(kMaxAngularRate * 0.1) // Add a 2% deadband
-            .withDriveRequestType(DriveRequestType.Velocity) // Use open-loop control for drive motors
-            .withDesaturateWheelVelocities(true); // Desaturate wheel speeds to avoid exceeding max speed
-
-        public static final SwerveRequest.SwerveDriveBrake xBrake = new SwerveRequest.SwerveDriveBrake();
-        public static final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
-        public static final SwerveRequest.RobotCentric robotCentric = new SwerveRequest.RobotCentric()
-            .withDriveRequestType(DriveRequestType.Velocity);
-
-        public static final PPHolonomicDriveController pathController =
-            new PPHolonomicDriveController(
-                new PIDConstants(7.5, 0, 0), // Lightened from 8.0 for sharp turns
-                new PIDConstants(4, 0, 0)
-            );
 
         // !High ceiling, calculated from claude given robot config. May need to be tuned on real robot.
         public static final double kPathMaxLinearAcceleration = 5;
@@ -82,7 +66,7 @@ public final class Constants {
 
     }
 
-    // *Constants for vision processing and AprilTag field layout
+    // *Vision constants
     public static class VisionConstants{
         public static final double kHubAlignToleranceDeg = 1.0;
 
@@ -143,7 +127,7 @@ public final class Constants {
         public static final double kFreeSpeedRpm = 5676;
         public static final double kStallCurrent = 30;
     }
-    
+
     // *intake motorID is 22
     public static final class IntakeConstants {
         public static final int kIntakeMotorCanId = 22;

@@ -11,10 +11,13 @@ import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.hardware.Pigeon2;
 import com.ctre.phoenix6.swerve.SwerveDrivetrainConstants;
 import com.ctre.phoenix6.swerve.SwerveModule;
+import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveModuleConstants;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 import com.pathplanner.lib.auto.AutoBuilder;
+import com.pathplanner.lib.config.PIDConstants;
 import com.pathplanner.lib.config.RobotConfig;
+import com.pathplanner.lib.controllers.PPHolonomicDriveController;
 
 import org.wpilib.math.linalg.Matrix;
 import org.wpilib.math.geometry.Pose2d;
@@ -43,40 +46,33 @@ import first.robot.util.telepathy.commands.ShinFollowPathCommand;
  *  !Subsystem so it can easily be used in command-based projects.
  */
 public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Subsystem, SwerveIO {
-    // private static final double kSimLoopPeriod = 0.002; // 2 ms
-    // private Notifier m_simNotifier = null;
-
     private int loggingLoopCounter = 0;
     private static final int LOG_EVERY_N_LOOPS = 5; // 5 loops = about 100ms
-    //private final BaseStatusSignal[] m_logSignals;
-
-    //* Blue alliance sees forward as 0 degrees (toward red alliance wall) */
-    //private static final Rotation2d kBlueAlliancePerspectiveRotation = Rotation2d.ZERO;
-
-    //* Red alliance sees forward as 180 degrees (toward blue alliance wall) */
-   //private static final Rotation2d kRedAlliancePerspectiveRotation = Rotation2d.k180deg;
-
-    //* Keep track if we've ever applied the operator perspective before or not */
-    //private boolean m_hasAppliedOperatorPerspective = false;
 
     private final SwerveIOInputsAutoLogged m_inputs = new SwerveIOInputsAutoLogged();
 
     /** // !Swerve request to apply during robot-centric path following 
      *  // *This also takes in our robot's physical constrants to create optimal path speeds.
     */
-    private final SwerveRequest.ApplyRobotVelocity m_pathApplyRobotSpeeds = new SwerveRequest.ApplyRobotVelocity();
+    private final SwerveRequest.ApplyRobotVelocity pathApplyRobotSpeeds = new SwerveRequest.ApplyRobotVelocity();
+    private final SwerveRequest.ApplyRobotVelocity teleopApplyRobotSpeeds = new SwerveRequest.ApplyRobotVelocity();
+    private final SwerveRequest.Idle idle = new SwerveRequest.Idle();
 
-    // *Separate request object for runVelocity (teleop/default command).
-    // *MUST NOT be the same instance as m_pathApplyRobotSpeeds: the path follower
-    // *mutates m_pathApplyRobotSpeeds with .withWheelForceFeedforwardsX/Y at every
-    // *step. Those feedforward forces persist on the shared object even after the path
-    // *ends. runVelocity() only calls .withSpeeds() and never clears the feedforwards,
-    // *so the stale path-end forces keep the drive motors spinning at cruise speed
-    // *regardless of what velocity is commanded — causing the observed drift.
-    private final SwerveRequest.ApplyRobotVelocity m_teleopApplyRobotSpeeds = new SwerveRequest.ApplyRobotVelocity();
-    
-    //** Swerve request to apply after the robot finished going through a path in Pathmaster. */
-    private final SwerveRequest.Idle m_idle = new SwerveRequest.Idle();
+    private final SwerveRequest.SwerveDriveBrake xBrake = new SwerveRequest.SwerveDriveBrake();
+    private final SwerveRequest.PointWheelsAt pointWheels = new SwerveRequest.PointWheelsAt();
+    private final SwerveRequest.RobotCentric robotCentric = new SwerveRequest.RobotCentric()
+        .withDriveRequestType(DriveRequestType.Velocity);
+
+    public static final SwerveRequest.FieldCentric driveRequest = new SwerveRequest.FieldCentric()
+        .withDeadband(DriveConstants.kMaxSpeed * 0.1).withRotationalDeadband(DriveConstants.kMaxAngularRate * 0.1) // Add a 2% deadband
+        .withDriveRequestType(DriveRequestType.Velocity) // Use open-loop control for drive motors
+        .withDesaturateWheelVelocities(true); // Desaturate wheel speeds to avoid exceeding max speed
+
+    private final PPHolonomicDriveController pathController =
+        new PPHolonomicDriveController(
+            new PIDConstants(7.5, 0, 0), // Lightened from 8.0 for sharp turns
+            new PIDConstants(4, 0, 0)
+        );
 
     //* Swerve requests to apply during SysId characterization */
     private final SwerveRequest.SysIdSwerveTranslation m_translationCharacterization = new SwerveRequest.SysIdSwerveTranslation();
@@ -257,12 +253,12 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
                 this::getSpeeds, // Supplier of current robot speeds
                 (speeds, feedforwards) -> {
                     setControl(
-                        m_pathApplyRobotSpeeds.withVelocity(speeds)
+                        pathApplyRobotSpeeds.withVelocity(speeds)
                             .withWheelForceFeedforwardsX(feedforwards.robotRelativeForcesXNewtons())
                             .withWheelForceFeedforwardsY(feedforwards.robotRelativeForcesYNewtons())
                     );
                 },
-                DriveConstants.pathController,
+                pathController,
                 config,
                 // *Assume the path needs to be flipped for Red vs Blue, this is normally the case
                 () -> MatchState.getAlliance().orElse(Alliance.BLUE) == Alliance.RED,
@@ -276,12 +272,12 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
                     this::getSpeeds,
                     (speeds, feedforwards) -> {
                         setControl(
-                            m_pathApplyRobotSpeeds.withVelocity(speeds.times(0.3))
+                            pathApplyRobotSpeeds.withVelocity(speeds.times(0.3))
                                 .withWheelForceFeedforwardsX(feedforwards.robotRelativeForcesXNewtons())
                                 .withWheelForceFeedforwardsY(feedforwards.robotRelativeForcesYNewtons())
                         );
                     },
-                    DriveConstants.pathController,
+                    pathController,
                     config,
                     () -> MatchState.getAlliance().orElse(Alliance.BLUE) == Alliance.RED,
                     this
@@ -343,7 +339,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     }
 
     public Command idle() {
-        return applyRequest(() -> m_idle);
+        return applyRequest(() -> idle);
     }
 
     public void registerMotors() {
@@ -354,7 +350,6 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         }
     }
 
-    //Updates maplesim pose
     @Override
     public void simulationPeriodic() {
     }
@@ -420,12 +415,9 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         var state = getState();
 
         inputs.moduleStates = state.ModuleVelocities;
-
         inputs.timestamp = Utils.getCurrentTimeSeconds();
-
         inputs.robotChassisVelocities = state.Velocity;
         inputs.robotHeading = state.Pose.getRotation().getRadians();
-
         inputs.totalCurrent = 0.0;
 
         for (int i = 0; i < 4; i++) {
@@ -434,9 +426,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         }
 
         inputs.totalVoltage = RobotController.getBatteryVoltage();
-        
         inputs.isFieldOriented = false;
-
         inputs.robotPose = state.Pose;
     }
 
@@ -446,17 +436,9 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
 
 
     public void runVelocity(ChassisVelocities speeds) {
-        // discretize corrects for the robot rotating during the 20ms loop:
-        // without it, translating + rotating simultaneously causes lateral drift
-        // because the robot-relative velocity direction becomes stale mid-loop.
-        ChassisVelocities discreteSpeeds = speeds.discretize(0.02);
-
-        // Use m_teleopApplyRobotSpeeds, NOT m_pathApplyRobotSpeeds.
-        // The path follower leaves stale wheel-force feedforwards on m_pathApplyRobotSpeeds
-        // after every path step. Those forces persist and override the velocity PID,
-        // causing the robot to keep driving at path cruise speed even when commanded zero.
+        ChassisVelocities discreteSpeeds = speeds.discretize(0.02); // Discretize corrects for the robot rotating during the 20ms loop:
         setControl(
-            m_teleopApplyRobotSpeeds.withVelocity(discreteSpeeds)
+            teleopApplyRobotSpeeds.withVelocity(discreteSpeeds) // Use teleopApplyRobotSpeeds, NOT pathApplyRobotSpeeds.
         );
     }
 
