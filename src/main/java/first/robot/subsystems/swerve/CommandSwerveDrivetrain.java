@@ -58,10 +58,10 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     private final SwerveRequest.ApplyRobotVelocity teleopApplyRobotSpeeds = new SwerveRequest.ApplyRobotVelocity();
     private final SwerveRequest.Idle idle = new SwerveRequest.Idle();
 
-    private final SwerveRequest.SwerveDriveBrake xBrake = new SwerveRequest.SwerveDriveBrake();
-    private final SwerveRequest.PointWheelsAt pointWheels = new SwerveRequest.PointWheelsAt();
-    private final SwerveRequest.RobotCentric robotCentric = new SwerveRequest.RobotCentric()
-        .withDriveRequestType(DriveRequestType.Velocity);
+    // private final SwerveRequest.SwerveDriveBrake xBrake = new SwerveRequest.SwerveDriveBrake();
+    // private final SwerveRequest.PointWheelsAt pointWheels = new SwerveRequest.PointWheelsAt();
+    // private final SwerveRequest.RobotCentric robotCentric = new SwerveRequest.RobotCentric()
+    //     .withDriveRequestType(DriveRequestType.Velocity);
 
     public static final SwerveRequest.FieldCentric driveRequest = new SwerveRequest.FieldCentric()
         .withDeadband(DriveConstants.kMaxSpeed * 0.1).withRotationalDeadband(DriveConstants.kMaxAngularRate * 0.1) // Add a 2% deadband
