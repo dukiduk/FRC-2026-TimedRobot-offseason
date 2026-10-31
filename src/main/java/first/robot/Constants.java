@@ -1,5 +1,5 @@
-  // Copyright (c) FIRST and other WPILib contributors.
-  // Open Source Software; you can modify and/or share it under the terms of
+// Copyright (c) FIRST and other WPILib contributors.
+// Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
 package first.robot;
@@ -31,250 +31,174 @@ import org.wpilib.framework.RobotBase;
 import first.robot.generated.TunerConstants;
 import first.robot.util.FieldUtil;
 
-// *The Constants class provides a convenient place for teams to hold robot-wide numerical or boolean constants.
-// !This class should not be used for any other purpose. All constants should be declared globally (i.e. public static).
-
-// *It is advised to statically import this class (or one of its inner classes) wherever the constants are needed, to reduce verbosity.
+// The Constants class provides a convenient place for teams to hold robot-wide numerical or boolean constants.
+// This class should not be used for any other purpose. All constants should be declared globally (i.e. public static).
+// It is advised to statically import this class (or one of its inner classes) wherever the constants are needed, to reduce verbosity.
 
 public final class Constants {
-  public static final Mode simMode = Mode.SIM;
-  public static final Mode currentMode = RobotBase.isReal() ? Mode.REAL : simMode;
 
-  // *Enum for different robot modes, used to switch between real, sim, and replay implementations of subsystems and commands.
-  public static enum Mode {
-    /** Running on a real robot. */
-    REAL,
+    // *Enum to switch b/w real, sim, and replay
+    public static final Mode kCurrentMode = RobotBase.isReal() ? Mode.REAL : Mode.SIM;
+    public static enum Mode {
+        REAL,
+        SIM,
+        REPLAY
+    }
 
-    /** Running a physics simulator. */
-    SIM,
+    // *Constants for the drivetrain
+    public static class DriveConstants {
 
-    /** Replaying from a log file. */
-    REPLAY
-  }
+        public static final double kMaxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
+        public static final double kMaxAngularRate = RotationsPerSecond.of(.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
 
-  // *Constants for the drivetrain
-  public static class DriveConstants {
+        public static final SwerveRequest.FieldCentric driveRequest = new SwerveRequest.FieldCentric()
+            .withDeadband(kMaxSpeed * 0.1).withRotationalDeadband(kMaxAngularRate * 0.1) // Add a 2% deadband
+            .withDriveRequestType(DriveRequestType.Velocity) // Use open-loop control for drive motors
+            .withDesaturateWheelVelocities(true); // Desaturate wheel speeds to avoid exceeding max speed
 
-    public static final double MaxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
-    public static final double MaxAngularRate = RotationsPerSecond.of(.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
-
-    public static final SwerveRequest.FieldCentric driveRequest = new SwerveRequest.FieldCentric()
-      .withDeadband(MaxSpeed * 0.1).withRotationalDeadband(MaxAngularRate * 0.1) // Add a 2% deadband
-      .withDriveRequestType(DriveRequestType.Velocity) // Use open-loop control for drive motors
-      .withDesaturateWheelVelocities(true); // Desaturate wheel speeds to avoid exceeding max speed
-
-    public static final SwerveRequest.SwerveDriveBrake xBrake = new SwerveRequest.SwerveDriveBrake();
-    public static final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
-    public static final SwerveRequest.RobotCentric robotCentric = new SwerveRequest.RobotCentric()
+        public static final SwerveRequest.SwerveDriveBrake xBrake = new SwerveRequest.SwerveDriveBrake();
+        public static final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
+        public static final SwerveRequest.RobotCentric robotCentric = new SwerveRequest.RobotCentric()
             .withDriveRequestType(DriveRequestType.Velocity);
 
-    public static final PPHolonomicDriveController pathController =
-      new PPHolonomicDriveController(
-          // *PID constants for translation
-          //Lightened from 8.0 for sharp turns
-          new PIDConstants(7.5, 0, 0),
-          // *PID constants for rotation
-          new PIDConstants(4, 0, 0)
-      );
+        public static final PPHolonomicDriveController pathController =
+            new PPHolonomicDriveController(
+                new PIDConstants(7.5, 0, 0), // Lightened from 8.0 for sharp turns
+                new PIDConstants(4, 0, 0)
+            );
 
-    // !High ceiling, calculated from claude given robot config. May need to be tuned on real robot.
-    public static final double pathMaxLinearAcceleration =  5; // m/s^2
-    public static final double pathMaxAngularAcceleration = 5; // rad/s^2
+        // !High ceiling, calculated from claude given robot config. May need to be tuned on real robot.
+        public static final double kPathMaxLinearAcceleration = 5;
+        public static final double kPathMaxAngularAcceleration = 5;
 
-    //Copied from 4915 Spartronics. Their Post Path Precise Alignment is far better than ours
-    public static final Rotation2d kRotationTolerance = Rotation2d.fromDegrees(1.0);
-    public static final Distance kPositionTolerance = Centimeter.of(1.0);
-    public static final LinearVelocity kSpeedTolerance = MetersPerSecond.of(0.3);
+        // Copied from 4915 Spartronics. Their Post Path Precise Alignment is far better than ours
+        public static final Rotation2d kRotationTolerance = Rotation2d.fromDegrees(1.0);
+        public static final Distance kPositionTolerance = Centimeter.of(1.0);
+        public static final LinearVelocity kSpeedTolerance = MetersPerSecond.of(0.3);
 
-    public static final Time kEndTriggerDebounce = Seconds.of(0.04);
+        public static final Time kEndTriggerDebounce = Seconds.of(0.04);
 
-    public static final String choreoKey = "choreo/";
+        public static final String choreoKey = "choreo/";
 
-  }
-
-  // *Constants for vision processing and AprilTag field layout
-  public static class VisionConstants{
-    //public static final String limelightName = "limelight-meowlit";
-    public static final double HUB_ALIGN_TOLERANCE_DEG = 1.0;
-
-    public static final int blueMiddleTagId = 26;
-    public static final int redMiddleTagId = 10;
-
-    public static final int blueLeftTagId = 21;
-    public static final int redLeftTagId = 5;
-
-    public static final int blueRightTagId = 18;
-    public static final int redRightTagId = 2;
-
-    public static int getMiddleTagId () {
-      return FieldUtil.allianceRelativeFiducial(blueMiddleTagId);
-    }
-    public static int getLeftTagId () {
-      return FieldUtil.allianceRelativeFiducial(blueLeftTagId);
-    }
-    public static int getRightTagId () {
-      return FieldUtil.allianceRelativeFiducial(blueRightTagId);
     }
 
-    public static double getDirectionFlipper() {
-      if (MatchState.getAlliance().isEmpty()) {
-        return 0;
-      }
+    // *Constants for vision processing and AprilTag field layout
+    public static class VisionConstants{
+        public static final double kHubAlignToleranceDeg = 1.0;
 
-      return MatchState.getAlliance().get() == Alliance.RED ? 1 : -1;
-    }
+        public static double getDirectionFlipper() {
+            if (MatchState.getAlliance().isEmpty()) {
+                return 0;
+            }
 
-    public static Transform3d robotToCamera1 = new Transform3d(
-      new Translation3d(0.25, -.072, 0.09),
-      new Rotation3d(0, Math.toRadians(10), 0)
-    );
-
-    // *Hub Positions
-    static final Pose2d RED_HUB = new Pose2d(11.901424, 4.024, Rotation2d.fromDegrees(0));
-    static final Pose2d BLUE_HUB = new Pose2d(4.611, 4.024, Rotation2d.fromDegrees(0));
-
-    public static Pose2d getHubPose() {
-      return FieldUtil.allianceRelativePose(BLUE_HUB);
-    }
-
-    public static Pose2d getHubPose(Alliance alliance) {
-      return alliance == Alliance.RED ? RED_HUB : BLUE_HUB;
-    }
-
-    public static Pose2d getAimPose() {
-      return ShooterConstants.getShootingSetpoint(1);
-    }
-    
-    public static Pose2d getCenter() {
-      return new Pose2d(FIELD_MAX_X / 2, FIELD_MAX_Y / 2, Rotation2d.fromDegrees(0));
-    }
-  }
-
-  // *intake motorIDs are values of 20
-  public static final class IntakeConstants {
-    public static final int pivotMotorCanId = 21;
-    public static final int intakeMotorCanId = 22;
-
-    public static final double pivotPower = 0.1;
-    public static final double intakePower = 0.4;
-
-    public static final double pivotkP = 1;
-    public static final double pivotkI = 0;
-    public static final double pivotkD = 0;
-
-    public static final double kMaxPivotVelocity =     1.0; // rotations per second, tune as needed
-    public static final double kMaxPivotAcceleration = 1.0; // rotations per second^2, tune as needed
-
-    public static final double kPivotSetpointA = 0.0;  
-    public static final double kPivotSetpointB = 17; 
-    
-    public static final double pivotUpPosition   = 0/* rotations */;
-    public static final double pivotDownPosition = 0.5;
-    public static final double pivotTolerance    = 0.05; // rotations, tune as needed
-
-    public static final double kPivotFreeSpeedRpm = 5676;
-    public static final double kPivotStallCurrent = 30;
-  }
-
-  // *shooter motorIDs are values of 30
-  public static final class ShooterConstants {
-    public static final int shooterMotorCanId1 = 31;
-    public static final int shooterMotorCanId2 = 32;
-
-    public static final int kickerMotorCanId1 = 33;
-    public static final int kickerMotorCanId2 = 34;
-
-
-    public static final double kickerMotorPower = 0.59;
-    
-
-    // |Aimpose for testing setpoint pathing to shootinng
-    // ?Facing toward blue hub at (4.611624, 4.024) from (2, 2)
-    // ?Angle = atan2(2.024, 2.611624) ≈ 37.592°    
-    public static final Pose2d[] shootingSetpoints = {
-      FieldUtil.facePose(new Pose2d(3.03, 0.75, Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
-      FieldUtil.facePose(new Pose2d(2,    2,    Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
-      FieldUtil.facePose(new Pose2d(1.6,  4,    Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
-      FieldUtil.facePose(new Pose2d(2,    6,    Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
-      FieldUtil.facePose(new Pose2d(3.03, 7.25, Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
-    };
-
-    private static Pose2d[] cachedAllianceSetpoints = null;
-
-    public static void clearAllianceCache() {
-        cachedAllianceSetpoints = null;
-    }
-
-    public static Pose2d getShootingSetpoint(int num) {
-        if (cachedAllianceSetpoints == null && MatchState.getAlliance().isPresent()) {
-            cachedAllianceSetpoints = Arrays.stream(shootingSetpoints)
-                .map(FieldUtil::allianceRelativePose)
-                .toArray(Pose2d[]::new);
+            return MatchState.getAlliance().get() == Alliance.RED ? 1 : -1;
         }
-        if (cachedAllianceSetpoints != null) return cachedAllianceSetpoints[num - 1];
-        return FieldUtil.allianceRelativePose(shootingSetpoints[num - 1]);  // fallback if DS not ready
-    }
-  }
 
-  // *climb motorIDs are values of 40
-  public static final class ClimbConstants{
-    public static final int climbMotorCanId = 41;
-    public static final double climbSpeed = .1;
-    public static final double climbMax = 15.0;
-    private static final Pose2d RedClimb = new Pose2d(14.94, 3.71, Rotation2d.fromDegrees(0));
-    private static final Pose2d BlueClimb = new Pose2d(1.6, 3.71, Rotation2d.fromDegrees(0));
-    public static Pose2d getClimbPose() {
-      return FieldUtil.allianceRelativePose(BlueClimb);
+        public static Transform3d kRobotToCamera1 = new Transform3d(
+            new Translation3d(0.25, -.072, 0.09),
+            new Rotation3d(0, Math.toRadians(10), 0)
+        );
+
+        // *Hub Positions
+        static final Pose2d kRedHub = new Pose2d(11.901424, 4.024, Rotation2d.fromDegrees(0));
+        static final Pose2d kBlueHub = new Pose2d(4.611, 4.024, Rotation2d.fromDegrees(0));
+
+        public static Pose2d getHubPose() {
+            return FieldUtil.allianceRelativePose(kBlueHub);
+        }
+
+        public static Pose2d getHubPose(Alliance alliance) {
+            return alliance == Alliance.RED ? kRedHub : kBlueHub;
+        }
+
+        public static Pose2d getAimPose() {
+            return ShooterConstants.getShootingSetpoint(1);
+        }
+        
+        public static Pose2d getCenter() {
+            return new Pose2d(FieldUtil.FIELD_MAX_X / 2, FieldUtil.FIELD_MAX_Y / 2, Rotation2d.fromDegrees(0));
+        }
     }
 
-    public static Pose2d getClimbPose(Alliance alliance) {
-      return alliance == Alliance.RED ? RedClimb : BlueClimb;
+    // *pivot motorID is 21 (honestly we need 2 motors, idk why we only have one)
+    // All distances are in rotations
+    public static final class PivotConstants {
+        public static final int kPivotMotorCanId = 21;
+        public static final double kPivotMotorPower = 0.1;
+
+        public static final double kP = 1;
+        public static final double kI = 0;
+        public static final double kD = 0;
+
+        public static final double kMaxVelocity = 1.0; // tune as needed
+        public static final double kMaxAcceleration = 1.0; // tune as needed
+
+        public static final double kSetpointA = 0.0;
+        public static final double kSetpointB = 17;
+        
+        public static final double kUpPosition   = 0;
+        public static final double kDownPosition = 0.5;
+        public static final double kTolerance    = 0.05;
+
+        public static final double kFreeSpeedRpm = 5676;
+        public static final double kStallCurrent = 30;
     }
     
-  }
+    // *intake motorID is 22
+    public static final class IntakeConstants {
+        public static final int kIntakeMotorCanId = 22;
+        public static final double kIntakeMotorPower = 0.4;
+    }
 
-  public static final class ArmConstants {
-    public static final int elevatorOneCanId = 51;
-    public static final int elevatorTwoCanId = 52;
-    public static final int elevatorThreeCanId = 53;
+    // *shooter motorIDs are values of 30
+    public static final class ShooterConstants {
+        public static final int kShooterMotorCanId1 = 31;
+        public static final int kShooterMotorCanId2 = 32;
 
-    public static final double ELEVATOR_GEAR_RATIO = (40.0 / 12.0) * (36.0 / 40.0) * (34.0 / 14.0) * (62.0 / 78.0);
-    public static final double ELEVATOR_PULLEY_DIAMETER = Meter.convertFrom(0.25 * 16.0 / Math.PI, Inch);
-    public static final double ELEVATOR_CASCADE_COEFFICIENT = 2.0;
-    public static final double ELEVATOR_POSITION_COEFFICIENT =
-            Math.PI * ELEVATOR_PULLEY_DIAMETER / ELEVATOR_GEAR_RATIO * ELEVATOR_CASCADE_COEFFICIENT;
+        public static final int kKickerMotorCanId1 = 33;
+        public static final int kKickerMotorCanId2 = 34;
 
-    public static final int wristMotorCanId = 54;
-    public static final double wristGearing = (9.0 / 44.0) * (12.0 / 32.0) * (12.0 / 32.0);
 
-    public static final double wristkP = 3.0;
-    public static final double wristkI = 0.0;
-    public static final double wristkD = 0.02;
+        public static final double kKickerMotorPower = 0.59;
+        
 
-    public static final int pivotOneCanId = 55;
-    public static final int pivotTwoCanId = 56;
-    public static final int pivotThreeCanId = 57;
+        // |Aimpose for testing setpoint pathing to shootinng
+        // ?Facing toward blue hub at (4.611624, 4.024) from (2, 2)
+        // ?Angle = atan2(2.024, 2.611624) ≈ 37.592°    
+        public static final Pose2d[] kShootingSetpoints = {
+            FieldUtil.facePose(new Pose2d(3.03, 0.75, Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
+            FieldUtil.facePose(new Pose2d(2,    2,    Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
+            FieldUtil.facePose(new Pose2d(1.6,  4,    Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
+            FieldUtil.facePose(new Pose2d(2,    6,    Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
+            FieldUtil.facePose(new Pose2d(3.03, 7.25, Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
+        };
 
-    public static final double pivotGearing = (64.0 / 12.0) * (36.0 / 18.0) * (58.0 / 14.0);
+        public static void flipShootingSetpoints() {
+            for (int i = 0; i < kShootingSetpoints.length; i++) {
+                kShootingSetpoints[i] = FieldUtil.allianceRelativePose(kShootingSetpoints[i]);
+            }
+        }
 
-    public static final double[] armMasses = new double[] {4.392837, 1.791908, 1.575572};
-    // Interestingly onshape gives the moments of inertia of the arm from its COM, and from the pivot point according to the CAD
-    // |MOI = 432.78 kg * in^2 FOR STAGE ONE (holy shit)
-    // |MOI =  375.19 kg * in^2 FOR STAGE TWO (gawd damn)
-    // |MOI =  284.14 kg * in^2 FOR STAGE THREE (what the hell)
-    // I'll integrate these more accurate values once I get visualization sorted out but for now I'll just use rough estimations from my simple MOI formula
-    
-    public static final double[] armLengths = new double[] {Units.inchesToMeters(22.337), Units.inchesToMeters(24.330), Units.inchesToMeters(26.708)};
+        public static Pose2d getShootingSetpoint(int num) {
+            return kShootingSetpoints[num - 1];
+        }
+    }
 
-    public static final LoggedNetworkNumber pivotAngle = new LoggedNetworkNumber("Arm/PivotAngle", 0.0);
-    public static final LoggedNetworkNumber elevatorExtension = new LoggedNetworkNumber("Arm/ElevatorExtension", 0.0);
-  }
+    // *climb motorIDs are values of 40
+    public static final class ClimbConstants{
+        public static final int kClimbMotorCanId = 41;
+        public static final double kClimbSpeed = .1;
+        public static final double kClimbMax = 15.0;
+        private static final Pose2d kRedClimb = new Pose2d(14.94, 3.71, Rotation2d.fromDegrees(0));
+        private static final Pose2d kBlueClimb = new Pose2d(1.6, 3.71, Rotation2d.fromDegrees(0));
 
-  // *Field
-  public static final double FIELD_MAX_X = FieldUtil.FIELD_MAX_X;
-  public static final double FIELD_MAX_Y = FieldUtil.FIELD_MAX_Y;
+        public static Pose2d getClimbPose(Alliance alliance) {
+            return alliance == Alliance.RED ? kRedClimb : kBlueClimb;
+        }
+        
+    }
 
-  // *Constants for tag observation and pose validation
-  public static final double DONT_SEE_TAG_WAIT_TIME = 0.5;
-  public static final double POSE_VALIDATION_TIME = 1.0;
+    // *Constants for tag observation and pose validation
+    public static final double kTagInvisibilityWaitTime = 0.5;
+    public static final double kPoseValidationTime = 1.0;
 }

@@ -74,9 +74,9 @@ public class DriveCommands {
             // Convert to field relative speeds & send command
             ChassisVelocities speeds =
                 new ChassisVelocities(
-                    linearVelocity.getX() * DriveConstants.MaxSpeed,
-                    linearVelocity.getY() * DriveConstants.MaxSpeed,
-                    omega * DriveConstants.MaxAngularRate);
+                    linearVelocity.getX() * DriveConstants.kMaxSpeed,
+                    linearVelocity.getY() * DriveConstants.kMaxSpeed,
+                    omega * DriveConstants.kMaxAngularRate);
             boolean isFlipped =
                 MatchState.getAlliance().isPresent()
                     && MatchState.getAlliance().get() == Alliance.RED;
@@ -105,9 +105,9 @@ public class DriveCommands {
         y = Math.copySign(y * y, y);
         omega = Math.copySign(omega * omega, omega);
 
-        double forward = x * DriveConstants.MaxSpeed;
-        double translation = y * DriveConstants.MaxSpeed;
-        double turn = omega * DriveConstants.MaxAngularRate;
+        double forward = x * DriveConstants.kMaxSpeed;
+        double translation = y * DriveConstants.kMaxSpeed;
+        double turn = omega * DriveConstants.kMaxAngularRate;
 
         return DriveConstants.driveRequest
                 .withVelocityX(forward)
