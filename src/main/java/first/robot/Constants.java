@@ -9,6 +9,8 @@ import static org.wpilib.units.Units.*;
 import java.util.Arrays;
 
 import org.littletonrobotics.junction.networktables.LoggedNetworkNumber;
+import org.littletonrobotics.junction.Logger;
+
 
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.pathplanner.lib.config.PIDConstants;
@@ -38,7 +40,7 @@ import first.robot.util.FieldUtil;
 public final class Constants {
 
     // *Enum to switch b/w real, sim, and replay
-    public static final Mode kCurrentMode = RobotBase.isReal() ? Mode.REAL : Mode.SIM;
+    public static final Mode kCurrentMode = Logger.hasReplaySource() ? Mode.REPLAY : RobotBase.isReal() ? Mode.REAL : Mode.SIM;
     public static enum Mode {
         REAL,
         SIM,
@@ -67,8 +69,15 @@ public final class Constants {
     }
 
     // *Vision constants
-    public static class VisionConstants{
+    public static class VisionConstants {
         public static final double kHubAlignToleranceDeg = 1.0;
+        public static final double kNonvisibleTagWaitTime = 0.5;
+        public static final double kPoseValidationTime = 1.0;
+
+        public static Transform3d kCameraPoseFront = new Transform3d(
+            new Translation3d(0.25, -.072, 0.09),
+            new Rotation3d(0, Math.toRadians(10), 0)
+        );
 
         public static double getDirectionFlipper() {
             if (MatchState.getAlliance().isEmpty()) {
@@ -77,37 +86,21 @@ public final class Constants {
 
             return MatchState.getAlliance().get() == Alliance.RED ? 1 : -1;
         }
-
-        public static Transform3d kRobotToCamera1 = new Transform3d(
-            new Translation3d(0.25, -.072, 0.09),
-            new Rotation3d(0, Math.toRadians(10), 0)
-        );
-
-        // *Hub Positions
-        static final Pose2d kRedHub = new Pose2d(11.901424, 4.024, Rotation2d.fromDegrees(0));
-        static final Pose2d kBlueHub = new Pose2d(4.611, 4.024, Rotation2d.fromDegrees(0));
-
-        public static Pose2d getHubPose() {
-            return FieldUtil.allianceRelativePose(kBlueHub);
-        }
-
-        public static Pose2d getHubPose(Alliance alliance) {
-            return alliance == Alliance.RED ? kRedHub : kBlueHub;
-        }
-
-        public static Pose2d getAimPose() {
-            return ShooterConstants.getShootingSetpoint(1);
-        }
-        
-        public static Pose2d getCenter() {
-            return new Pose2d(FieldUtil.FIELD_MAX_X / 2, FieldUtil.FIELD_MAX_Y / 2, Rotation2d.fromDegrees(0));
-        }
     }
 
-    // *pivot motorID is 21 (honestly we need 2 motors, idk why we only have one)
-    // All distances are in rotations
+    public static class FieldConstants {
+        public static final Pose2d kRedHub = new Pose2d(11.901424, 4.024, Rotation2d.fromDegrees(0));
+        public static final Pose2d kBlueHub = new Pose2d(4.611, 4.024, Rotation2d.fromDegrees(0));
+
+    public static final double kFieldMaxX = 16.518;
+    public static final double kFieldMaxY = 8.043;
+    }
+
+    // *pivot motorIDs are 21 and 22
+    // // All distances are in rotations
     public static final class PivotConstants {
-        public static final int kPivotMotorCanId = 21;
+        public static final int kPivotLeftMotorCanId = 21;
+        public static final int kPivotRightMotorCanId = 22;
         public static final double kPivotMotorPower = 0.1;
 
         public static final double kP = 1;
@@ -128,10 +121,21 @@ public final class Constants {
         public static final double kStallCurrent = 30;
     }
 
-    // *intake motorID is 22
+    // *intake motorID is 23
     public static final class IntakeConstants {
-        public static final int kIntakeMotorCanId = 22;
+        public static final int kIntakeMotorCanId = 23;
         public static final double kIntakeMotorPower = 0.4;
+
+        // We need to write a SysId to get these values
+        public static final double kV = 12.0/5676.0;
+        public static final double kA = 0.001;
+
+        // We can tune these
+        public static final double kP = 0.1;
+        public static final double kI = 0.0;
+        public static final double kD = 0.0;
+
+        public static final double kMOI = 10;
     }
 
     // *shooter motorIDs are values of 30
@@ -150,11 +154,11 @@ public final class Constants {
         // ?Facing toward blue hub at (4.611624, 4.024) from (2, 2)
         // ?Angle = atan2(2.024, 2.611624) ≈ 37.592°    
         public static final Pose2d[] kShootingSetpoints = {
-            FieldUtil.facePose(new Pose2d(3.03, 0.75, Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
-            FieldUtil.facePose(new Pose2d(2,    2,    Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
-            FieldUtil.facePose(new Pose2d(1.6,  4,    Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
-            FieldUtil.facePose(new Pose2d(2,    6,    Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
-            FieldUtil.facePose(new Pose2d(3.03, 7.25, Rotation2d.ZERO), VisionConstants.getHubPose(Alliance.BLUE)),
+            FieldUtil.facePose(new Pose2d(3.03, 0.75, Rotation2d.ZERO), FieldUtil.getHubPose(Alliance.BLUE)),
+            FieldUtil.facePose(new Pose2d(2,    2,    Rotation2d.ZERO), FieldUtil.getHubPose(Alliance.BLUE)),
+            FieldUtil.facePose(new Pose2d(1.6,  4,    Rotation2d.ZERO), FieldUtil.getHubPose(Alliance.BLUE)),
+            FieldUtil.facePose(new Pose2d(2,    6,    Rotation2d.ZERO), FieldUtil.getHubPose(Alliance.BLUE)),
+            FieldUtil.facePose(new Pose2d(3.03, 7.25, Rotation2d.ZERO), FieldUtil.getHubPose(Alliance.BLUE)),
         };
 
         public static void flipShootingSetpoints() {
@@ -181,8 +185,4 @@ public final class Constants {
         }
         
     }
-
-    // *Constants for tag observation and pose validation
-    public static final double kTagInvisibilityWaitTime = 0.5;
-    public static final double kPoseValidationTime = 1.0;
 }
