@@ -1,15 +1,15 @@
 package first.robot.subsystems.intake;
 
 import org.littletonrobotics.junction.AutoLog;
-import org.wpilib.units.measure.AngularVelocity;
-import org.wpilib.units.measure.Voltage;
+import org.wpilib.units.measure.*;
 
 public interface IntakeIO {
     @AutoLog 
     public static class IntakeIOInputs {
+        public Angle position;
         public AngularVelocity velocity;
-        public AngularVelocity setpoint;
         public Voltage voltage;
+        public AngularVelocity setpoint;
     }
 
     public void powerRegisterMotors();

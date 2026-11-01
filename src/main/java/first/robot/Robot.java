@@ -32,6 +32,8 @@ public class Robot extends LoggedRobot {
         } else {
             Logger.addDataReceiver(new NT4Publisher());
         }
+
+        Logger.start();
     }
     
     @Override

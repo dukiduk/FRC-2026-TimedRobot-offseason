@@ -3,7 +3,6 @@ package first.robot.subsystems.intake;
 import static org.wpilib.units.Units.*;
 
 import org.wpilib.hardware.bus.CANPort;
-import org.wpilib.units.measure.Current;
 import org.wpilib.units.measure.Voltage;
 
 import com.revrobotics.spark.SparkLowLevel.MotorType;
@@ -48,5 +47,6 @@ public class IntakeIOReal implements IntakeIO {
     public void updateInputs(IntakeIOInputs inputs) {
         inputs.voltage = Volts.of(motor.getBusVoltage().get() * motor.getAppliedOutput().get());
         inputs.velocity = RPM.of(encoder.getVelocity().get());
+        inputs.position = Rotations.of(encoder.getPosition().get());
     }
 }

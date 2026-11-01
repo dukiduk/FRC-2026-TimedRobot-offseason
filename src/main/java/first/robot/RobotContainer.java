@@ -6,44 +6,66 @@ package first.robot;
 
 import org.wpilib.command2.Command;
 import org.wpilib.command2.Commands;
+import org.wpilib.command2.InstantCommand;
 import org.wpilib.command2.button.CommandXboxController;
 
+import first.robot.Constants.*;
 import first.robot.generated.TunerConstants;
+
+import first.robot.subsystems.intake.Intake;
+import first.robot.subsystems.intake.IntakeIOReal;
+import first.robot.subsystems.intake.IntakeIOSim;
+
 import first.robot.subsystems.swerve.CommandSwerveDrivetrain;
 import first.robot.subsystems.swerve.DriveCommands;
 
 public class RobotContainer {
+    private double speedLimiter = 0.7;
 
-  private double speedLimiter = 0.7;
+    private final CommandSwerveDrivetrain drivetrain;
+    private final Intake intake;
 
-  private final CommandSwerveDrivetrain drivetrain;
-
-  private final CommandXboxController driverController = new CommandXboxController(0);
-  //private final CommandXboxController operatorController = new CommandXboxController(1);
+    private final CommandXboxController driverController = new CommandXboxController(0);
+    private final CommandXboxController operatorController = new CommandXboxController(1);
 
 
-  public RobotContainer() {
-    drivetrain = TunerConstants.createDrivetrain();
-    configureBindings();
-  }
+    public RobotContainer() {
+        drivetrain = TunerConstants.createDrivetrain();
+        intake = new Intake(Constants.kMode == Mode.REAL ? new IntakeIOReal() : new IntakeIOSim());
+        configureBindings();
+    }
 
-  private void configureBindings() {
-    drivetrain.setDefaultCommand(
-            drivetrain.applyRequest(() ->
-                DriveCommands.joystickDriveRequest(
-                    () -> -driverController.getLeftY() * speedLimiter,
-                    () -> -driverController.getLeftX() * speedLimiter,
-                    () -> -driverController.getRightX() * speedLimiter
+    private void configureBindings() {
+        drivetrain.setDefaultCommand(
+                drivetrain.applyRequest(() ->
+                    DriveCommands.joystickDriveRequest(
+                        () -> -driverController.getLeftY() * speedLimiter,
+                        () -> -driverController.getLeftX() * speedLimiter,
+                        () -> -driverController.getRightX() * speedLimiter
+                    )
                 )
+            );
+
+        driverController.leftTrigger().onTrue(
+            new InstantCommand(
+                () -> intake.setSetpoint(0),
+                intake
             )
         );
-  }
 
-  public Command getAutonomousCommand() {
-    return Commands.print("No autonomous command configured");
-  }
+        driverController.leftBumper().onTrue(
+            new InstantCommand(
+                () -> intake.setSetpoint(1),
+                intake
+            )
+        );
+    }
 
-  public CommandSwerveDrivetrain getDrivetrain() {
-    return drivetrain;
-  }
+    public Command getAutonomousCommand() {
+        return Commands.print("No autonomous command configured");
+    }
+
+    public CommandSwerveDrivetrain getDrivetrain() {
+        return drivetrain;
+    }
 }

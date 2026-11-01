@@ -11,8 +11,11 @@ import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.geometry.Rotation3d;
 import org.wpilib.math.geometry.Transform3d;
 import org.wpilib.math.geometry.Translation3d;
+import org.wpilib.math.system.DCMotor;
+import org.wpilib.units.measure.AngularVelocity;
 import org.wpilib.units.measure.Distance;
 import org.wpilib.units.measure.LinearVelocity;
+import org.wpilib.units.measure.MomentOfInertia;
 import org.wpilib.units.measure.Time;
 import org.wpilib.driverstation.Alliance;
 import org.wpilib.driverstation.MatchState;
@@ -30,12 +33,13 @@ import first.robot.util.FieldUtil;
 public final class Constants {
 
     // *Enum to switch b/w real, sim, and replay
-    public static final Mode kCurrentMode = Logger.hasReplaySource() ? Mode.REPLAY : RobotBase.isReal() ? Mode.REAL : Mode.SIM;
     public static enum Mode {
         REAL,
         SIM,
         REPLAY
     }
+    
+    public static final Mode kMode = Logger.hasReplaySource() ? Mode.REPLAY : RobotBase.isReal() ? Mode.REAL : Mode.SIM;
 
     // *Drive constants
     public static class DriveConstants {
@@ -107,7 +111,7 @@ public final class Constants {
         public static final double kDownPosition = 0.5;
         public static final double kTolerance    = 0.05;
 
-        public static final double kFreeSpeedRpm = 5676;
+        public static final double kFreeSpeedRadsPerSec = 594.39;
         public static final double kStallCurrent = 30;
     }
 
@@ -115,17 +119,22 @@ public final class Constants {
     public static final class IntakeConstants {
         public static final int kIntakeMotorCanId = 23;
         public static final double kIntakeMotorPower = 0.4;
+        public static final AngularVelocity kMaxVelocity = RadiansPerSecond.of(DCMotor.getNEO(1).freeSpeed);
 
         // We need to write a SysId to get these values
-        public static final double kV = 12.0/5676.0;
-        public static final double kA = 0.001;
+        public static final double kS = 0;
+        public static final double kV = 12.0 / 604; // we might change this for the actual mechanism but for some reason in sim the flywheel is able to spin up to 604 rad/s at 12v
+        public static final double kA = 0;
 
         // We can tune these
-        public static final double kP = 0.1;
+        public static final double kP = 0.0;
         public static final double kI = 0.0;
         public static final double kD = 0.0;
 
-        public static final double kMOI = 10;
+        public static final double kDt = 0.02; // tune as needed
+        
+        public static final MomentOfInertia kMOI = KilogramSquareMeters.of(.0001);
+        public static final double gearing = 1.0;
     }
 
     // *shooter motorIDs are values of 30
