@@ -47,6 +47,8 @@ import first.robot.util.telepathy.commands.ShinFollowPathCommand;
  */
 public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Subsystem, SwerveIO {
     private int loggingLoopCounter = 0;
+    private static final double kSimLoopPeriod = 0.005; // 5 ms
+    
     private static final int LOG_EVERY_N_LOOPS = 5; // 5 loops = about 100ms
 
     private final SwerveIOInputsAutoLogged m_inputs = new SwerveIOInputsAutoLogged();
@@ -169,9 +171,9 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     ) {
         super(drivetrainConstants, modules);
 
-        // if (Utils.isSimulation()) {
-        //     startSimThread();
-        // }
+        if (Utils.isSimulation()) {
+            startSimThread();
+        }
 
         registerMotors();
 
@@ -197,10 +199,10 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         SwerveModuleConstants<?, ?, ?>... modules
     ) {
         super(drivetrainConstants, odometryUpdateFrequency, modules);
-        //m_logSignals = cacheLogSignals();
-        // if (Utils.isSimulation()) {
-        //     startSimThread();
-        // }
+        m_logSignals = cacheLogSignals();
+        if (Utils.isSimulation()) {
+            startSimThread();
+        }
         registerMotors();
 
         configureAutoBuilder();
@@ -233,10 +235,10 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         SwerveModuleConstants<?, ?, ?>... modules
     ) {
         super(drivetrainConstants, odometryUpdateFrequency, odometryStandardDeviation, visionStandardDeviation, modules);
-        //m_logSignals = cacheLogSignals();
-        // if (Utils.isSimulation()) {
-        //     startSimThread();
-        // }
+        m_logSignals = cacheLogSignals();
+        if (Utils.isSimulation()) {
+            startSimThread();
+        }
 
         registerMotors();
 
@@ -410,6 +412,21 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     //     m_simNotifier = new Notifier(mapleSimSwerveDrivetrain::update);
     //     m_simNotifier.startPeriodic(kSimLoopPeriod);
     // }
+    //OLD startSimThread code. We should use this before MapleSim or Jsim comes back.
+    private void startSimThread() {
+        m_lastSimTime = Utils.getCurrentTimeSeconds();
+
+        // *Run simulation at a faster rate so PID gains behave more reasonably
+        m_simNotifier = new Notifier(() -> {
+            final double currentTime = Utils.getCurrentTimeSeconds();
+            double deltaTime = currentTime - m_lastSimTime;
+            m_lastSimTime = currentTime;
+
+            // *use the measured time delta, get battery voltage from WPILib
+            updateSimState(deltaTime, RobotController.getBatteryVoltage());
+        });
+        m_simNotifier.startPeriodic(kSimLoopPeriod);
+    }
 
     public void updateInputs(SwerveIOInputs inputs) {
         var state = getState();
