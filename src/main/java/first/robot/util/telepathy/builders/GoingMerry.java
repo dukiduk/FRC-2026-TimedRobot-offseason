@@ -22,7 +22,7 @@ import org.wpilib.command2.Command.InterruptionBehavior;
 import org.wpilib.command2.Commands;
 import first.robot.util.telepathy.commands.ShinFollowPathCommand;
 import first.robot.util.telepathy.commands.ShinPathfindingCommand;
-import first.robot.util.telepathy.util.RecoveryType;
+import first.robot.util.telepathy.util.Recovery;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -634,21 +634,17 @@ public class GoingMerry {
         return globals.isHolonomic;
     }
 
-    public static Selectable<RecoveryType> buildAutoRecoveryChooser() {
-        return buildAutoRecoveryChooser("NO_RECOVERY");
+    public static Selectable<String> buildAutoRecoveryChooser() {
+        return buildAutoRecoveryChooser(Recovery.NO_RECOVERY);
     }
 
-    public static Selectable<RecoveryType> buildAutoRecoveryChooser(RecoveryType defaultType) {
-        return buildAutoRecoveryChooser(defaultType.toString());
-    }
-
-    public static Selectable<RecoveryType> buildAutoRecoveryChooser(String defaultType) {
-        Selectable<RecoveryType> chooser = new Selectable<>();
-        for (RecoveryType type : RecoveryType.values()) {
-            chooser.add(type.toString(), type);
+    public static Selectable<String> buildAutoRecoveryChooser(String defaultType) {
+        Selectable<String> chooser = new Selectable<>();
+        for (String type : Recovery.getAllRecoveryModes()) {
+            chooser.add(type, type);
         }
         chooser.setDefault(defaultType);
-        chooser.onChange((type) -> RecoveryType.setCurrentMode(type));
+        chooser.onChange((type) -> Recovery.setCurrentMode(type));
 
         return chooser;
     }

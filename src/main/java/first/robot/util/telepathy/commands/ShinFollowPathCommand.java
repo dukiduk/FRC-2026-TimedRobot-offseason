@@ -22,7 +22,7 @@ import org.wpilib.command2.Commands;
 import org.wpilib.command2.Subsystem;
 import first.robot.util.telepathy.util.PathUtil;
 import org.wpilib.math.filter.Debouncer;
-import first.robot.util.telepathy.util.RecoveryType;
+import first.robot.util.telepathy.util.Recovery;
 import first.robot.util.telepathy.telemetry.PPLogging;
 
 import static org.wpilib.units.Units.Seconds;
@@ -182,7 +182,7 @@ public class ShinFollowPathCommand extends Command {
         PPLibTelemetry.setCurrentPose(currentPose);
 
         //Recovery mode stuff
-        if (RecoveryType.getCurrentMode() != RecoveryType.NO_RECOVERY) {
+        if (Recovery.getCurrentMode() != Recovery.NO_RECOVERY) {
         
         double positionError = PathUtil.distanceAlongPath(path, currentPose, targetState);
 
@@ -195,7 +195,7 @@ public class ShinFollowPathCommand extends Command {
             recoveryTimer.reset();
             recoveryTimer.start();
 
-            recoveryCommand = RecoveryType.getCurrentMode().recoveryCommandBuilder.apply(path, targetState);
+            recoveryCommand = Recovery.getCommandBuilder(Recovery.getCurrentMode()).apply(path, targetState);
             recoveryCommand.initialize();
         }
 
