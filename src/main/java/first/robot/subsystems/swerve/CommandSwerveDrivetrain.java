@@ -26,6 +26,7 @@ import org.wpilib.math.numbers.N1;
 import org.wpilib.math.numbers.N3;
 import org.wpilib.driverstation.Alliance;
 import org.wpilib.driverstation.MatchState;
+import org.wpilib.system.Notifier;
 import org.wpilib.system.RobotController;
 import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.command2.Command;
@@ -50,6 +51,8 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     private static final double kSimLoopPeriod = 0.005; // 5 ms
     
     private static final int LOG_EVERY_N_LOOPS = 5; // 5 loops = about 100ms
+    private Notifier m_simNotifier;
+    private double m_lastSimTime = 0.0;
 
     private final SwerveIOInputsAutoLogged m_inputs = new SwerveIOInputsAutoLogged();
 
@@ -199,7 +202,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         SwerveModuleConstants<?, ?, ?>... modules
     ) {
         super(drivetrainConstants, odometryUpdateFrequency, modules);
-        m_logSignals = cacheLogSignals();
+        //m_logSignals = cacheLogSignals();
         if (Utils.isSimulation()) {
             startSimThread();
         }
@@ -235,7 +238,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         SwerveModuleConstants<?, ?, ?>... modules
     ) {
         super(drivetrainConstants, odometryUpdateFrequency, odometryStandardDeviation, visionStandardDeviation, modules);
-        m_logSignals = cacheLogSignals();
+        //m_logSignals = cacheLogSignals();
         if (Utils.isSimulation()) {
             startSimThread();
         }
