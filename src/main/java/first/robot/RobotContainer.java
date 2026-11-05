@@ -26,6 +26,7 @@ public class RobotContainer {
     private final Intake intake;
 
     private final CommandXboxController driverController = new CommandXboxController(0);
+    @SuppressWarnings("unused")
     private final CommandXboxController operatorController = new CommandXboxController(1);
 
 

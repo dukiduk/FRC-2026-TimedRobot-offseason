@@ -1,5 +1,8 @@
 package first.robot.util.telepathy.util;
 
+import static org.wpilib.units.Units.Meters;
+import static org.wpilib.units.Units.Seconds;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.function.BiFunction;
@@ -9,12 +12,16 @@ import com.pathplanner.lib.trajectory.PathPlannerTrajectoryState;
 
 import org.wpilib.command2.Command;
 import org.wpilib.command2.Commands;
+import org.wpilib.units.measure.Distance;
+import org.wpilib.units.measure.Time;
 
 public class Recovery {
-    private static HashMap<String, BiFunction<PathPlannerPath, PathPlannerTrajectoryState, Command>> recoveryCommands = new HashMap<>();
-    private static String currentRecoveryMode = "No Recovery";
-    
     public static final String NO_RECOVERY = "No Recovery";
+
+    private static final HashMap<String, BiFunction<PathPlannerPath, PathPlannerTrajectoryState, Command>> recoveryCommands = new HashMap<>();
+    private static String currentRecoveryMode = NO_RECOVERY;
+    private static double minRecoveryDistMeters = 1.5; // Minimum distance in meters to trigger recovery
+    private static double recoveryTimeoutSeconds = 5.0; // After this many seconds, recovery gives up
 
     private Recovery() {}
 
@@ -46,5 +53,28 @@ public class Recovery {
         return new ArrayList<>(recoveryCommands.keySet());
     }
 
+    public static void setMinRecoveryDist(Distance minDist) {
+        minRecoveryDistMeters = minDist.in(Meters);
+    }
 
+
+    public static void setMinRecoveryDistMeters(double minDist) {
+        minRecoveryDistMeters = minDist;
+    }
+
+    public static double getMinRecoveryDistMeters() {
+        return minRecoveryDistMeters;
+    }
+
+    public static void setRecoveryTimeout(Time timeout) {
+        recoveryTimeoutSeconds = timeout.in(Seconds);
+    }
+
+    public static void setRecoveryTimeoutSeconds(double timeout) {
+        recoveryTimeoutSeconds = timeout;
+    }
+
+    public static double getRecoveryTimeoutSeconds() {
+        return recoveryTimeoutSeconds;
+    }
 }

@@ -15,8 +15,10 @@ import first.robot.util.Elastic;
 import first.robot.util.FieldUtil;
 import first.robot.util.Zone;
 import first.robot.util.telepathy.builders.*;
+import first.robot.util.telepathy.commands.PPRecoveryCommand;
 import first.robot.util.telepathy.commands.ShinPathfindingCommand;
 import first.robot.util.telepathy.telemetry.*;
+import first.robot.util.telepathy.util.Recovery;
 import first.robot.util.telepathy.zones.*;
 
 import java.util.ArrayList;
@@ -68,6 +70,7 @@ public class Pathmaster {
         this.selectedWaypointIndex = 0;
 
         createLoggingCallbacks();
+        registerRecoveryModes();
     }
 
     // *Call in Robot.java as the last line in Robot contructor
@@ -96,6 +99,13 @@ public class Pathmaster {
         PPLogging.setLogVelocitiesCallback((linAct, linCom, angAct, angCom) -> {
             PPLogger.logVelocities(linAct, linCom, angAct, angCom);
         });
+    }
+
+    private void registerRecoveryModes() {
+        Recovery.registerRecoveryMode("Drive to Point Recovery", (path, state) -> PPRecoveryCommand.generateCommand(path, state));
+        Recovery.registerRecoveryMode("Pathfinding Recovery", (path, state) -> GoingMerry.pathfindToPose(state.pose, path.getGlobalConstraints(), state.linearVelocity));
+
+        Recovery.setRecoveryTimeoutSeconds(7.0);
     }
 
     // *Register a waypoint on the field. By calling gotoWaypoint() we can align here automatically

@@ -15,7 +15,6 @@ import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.math.system.DCMotor;
-import org.wpilib.units.measure.Time;
 import org.wpilib.system.Timer;
 import org.wpilib.command2.Command;
 import org.wpilib.command2.Commands;
@@ -24,8 +23,6 @@ import first.robot.util.telepathy.util.PathUtil;
 import org.wpilib.math.filter.Debouncer;
 import first.robot.util.telepathy.util.Recovery;
 import first.robot.util.telepathy.telemetry.PPLogging;
-
-import static org.wpilib.units.Units.Seconds;
 
 import java.util.*;
 import java.util.function.BiConsumer;
@@ -53,7 +50,9 @@ public class ShinFollowPathCommand extends Command {
     private boolean isRecovering = false;
     private Command recoveryCommand = Commands.none();
     private final Timer recoveryTimer = new Timer();
-    private Time recoveryTimeout = Seconds.of(7.0);
+
+    private double recoveryTimeout = Recovery.getRecoveryTimeoutSeconds();
+    private double minRecoveryDistMeters = Recovery.getMinRecoveryDistMeters(); // Minimum distance in meters to trigger recovery
 
     private boolean prematureFinish = false;
 
@@ -186,7 +185,7 @@ public class ShinFollowPathCommand extends Command {
         
         double positionError = PathUtil.distanceAlongPath(path, currentPose, targetState);
 
-        boolean shouldRecover = fallenBehindPathDebouncer.calculate(positionError >= 1.25 && currentTime >= 0.5);
+        boolean shouldRecover = fallenBehindPathDebouncer.calculate(positionError >= minRecoveryDistMeters && currentTime >= 0.5);
 
         if (shouldRecover && !isRecovering) {
             timer.stop();
@@ -203,7 +202,7 @@ public class ShinFollowPathCommand extends Command {
         if (isRecovering) {
             recoveryCommand.execute();
 
-            if (recoveryTimer.hasElapsed(recoveryTimeout.in(Seconds))) {
+            if (recoveryTimer.hasElapsed(recoveryTimeout)) {
                 // Recovery timed out: terminate the child and the parent path command.
                 recoveryCommand.end(true);
                 recoveryCommand = Commands.none();
