@@ -1,40 +1,95 @@
 package first.robot.util.telepathy.util;
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import org.json.simple.parser.ParseException;
+
+import com.pathplanner.lib.path.EventMarker;
 import com.pathplanner.lib.path.PathPlannerPath;
 import com.pathplanner.lib.path.PathPoint;
 import com.pathplanner.lib.path.RotationTarget;
 import com.pathplanner.lib.trajectory.PathPlannerTrajectoryState;
+import com.pathplanner.lib.util.FileVersionException;
 
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
+import first.robot.util.telepathy.zones.PathZone;
+import first.robot.util.telepathy.zones.RecoveryZone;
+import first.robot.util.telepathy.zones.ZoneManager;
 
 public final class PathUtil {
 
-    private static PathPlannerPath basePath;
+    private static PathPlannerPath setPath;
     private static Rotation2d startRotation;
+
+    public static final String choreoKey = "choreo/";
 
     private PathUtil() {}
 
-    public static void setPathInfo(PathPlannerPath basePath, Rotation2d startRotation) {
-        PathUtil.basePath = basePath;
+    /**
+     * Retrieves a PathPlannerPath based on the provided path name.
+     * <br>
+     * If the path name starts with <b>"choreo/"</b>, it will retrieve a Choreo trajectory. Otherwise, it will search Pathplanner and then Choreo for the path
+     *
+     * @param pathName The name of the path or choreo trajectory.
+     * @return The retrieved PathPlannerPath.
+     * @throws IOException If there is an error reading the path file.
+     * @throws ParseException If there is an error parsing the path file.
+     * @throws FileVersionException If the path file version is incompatible.
+     */
+    public static PathPlannerPath getPath(String pathName) throws IOException, ParseException, FileVersionException {
+        if (pathName.startsWith(choreoKey)) {
+            return PathPlannerPath.fromChoreoTrajectory(pathName.substring(choreoKey.length()));
+        } else {
+            try {
+                return PathPlannerPath.fromPathFile(pathName);
+            } catch (FileNotFoundException e) {
+                return PathPlannerPath.fromChoreoTrajectory(pathName);
+            }
+        }
+    }
+
+    /**
+     * Sets the path and starting rotation for zone calculations
+     *
+     * @param setPath The base PathPlannerPath to be used.
+     * @param startRotation The starting rotation (Rotation2d) for the path.
+     */
+    public static void setPathInfo(PathPlannerPath newPath, Rotation2d startRotation) {
+        PathUtil.setPath = newPath;
         PathUtil.startRotation = startRotation;
     }
 
+    /**
+     * Retrieves all PathPoints from the path retrieved from {@link #setPathInfo()}.
+     * @return all the PathPoints from the path
+     */
     public static List<PathPoint> getPoints() {
-        return basePath.getAllPathPoints();
+        return setPath.getAllPathPoints();
     }
 
+    /**
+     * Retrieves the starting rotation for the path retrieved from {@link #setPathInfo()}.
+     * @return the starting rotation
+     */
     public static Rotation2d getStartRotation() {
         return startRotation;
     }
 
+    /**
+     * Retrieves the previous rotation for the path retrieved from {@link #setPathInfo()}. This is used in MultiRotationZone
+     * @param position The position along the path.
+     * @return the previous rotation.
+     */
     public static Rotation2d getPreviousRotation(double position) {
         RotationTarget best = null;
 
-        for (RotationTarget target : basePath.getRotationTargets()) {
+        for (RotationTarget target : setPath.getRotationTargets()) {
             if (target.position() < position) {
                 if (best == null || target.position() > best.position()) {
                     best = target;
@@ -47,6 +102,12 @@ public final class PathUtil {
             : startRotation;
     }
 
+    /**
+     * Retrieves all PathPoints between the given entry and exit positions along the path.
+     * @param entry The entry position along the path.
+     * @param exit The exit position along the path.
+     * @return A list of PathPoints between the entry and exit positions.
+     */
     public static List<PathPoint> getPointsBetween(double entry, double exit) {
         ArrayList<PathPoint> result = new ArrayList<>();
 
@@ -99,6 +160,95 @@ public final class PathUtil {
         }
 
         return targetDistance - currentDistance;
+    }
+
+    /**
+     * Fills in the path with recovery zones.
+     * @param path the base PathPlannerPath to be filled with recovery zones
+     * @return the updated PathPlannerPath with recovery zones added as event markers
+     */
+    public static PathPlannerPath fillRecoveryZones(PathPlannerPath path) {
+        List<PathPoint> points = path.getAllPathPoints();
+        List<EventMarker> eventMarkers = new ArrayList<>(path.getEventMarkers());
+        List<PathZone> activeZones = ZoneManager.getActiveZones();
+        Map<PathZone, Integer> activeZoneEntries = new HashMap<>();
+
+        for (int i = 0; i < points.size(); i++) {
+            PathPoint currentPoint = points.get(i);
+
+            for (PathZone zone : activeZones) {
+                if (!(zone instanceof RecoveryZone)) continue;
+                boolean isInside = zone.contains(currentPoint.position);
+                boolean isActive = activeZoneEntries.containsKey(zone);
+
+                // Track zone entry
+                if (isInside && !isActive) {
+                    activeZoneEntries.put(zone, i);
+                }
+
+                // Process zone exit OR segment split at stop
+                if (isActive && !isInside) {
+                    int entryIndex = activeZoneEntries.get(zone);
+                    int exitIndex = isInside ? i : i - 1;
+
+                    if (exitIndex >= entryIndex) {
+                        double entryWaypointIndex =
+                            points.get(entryIndex).waypointRelativePos;
+
+                        double exitWaypointIndex =
+                            points.get(exitIndex).waypointRelativePos;
+
+                        eventMarkers.addAll(
+                            zone.createEventMarkers(
+                                entryWaypointIndex,
+                                exitWaypointIndex
+                            )
+                        );
+                    }
+
+                    activeZoneEntries.remove(zone);
+
+                    // Resume zone tracking immediately after a stop if still inside
+                    if (isInside) {
+                        activeZoneEntries.put(zone, i);
+                    }
+                }
+            }
+        }
+
+        for (Map.Entry<PathZone, Integer> entry : activeZoneEntries.entrySet()) {
+            PathZone zone = entry.getKey();
+            if (!(zone instanceof RecoveryZone)) continue;
+            
+            int entryIndex = entry.getValue();
+            int exitIndex = points.size() - 1;
+
+            double entryWaypointIndex =
+                points.get(entryIndex).waypointRelativePos;
+
+            double exitWaypointIndex =
+                points.get(exitIndex).waypointRelativePos;
+
+            eventMarkers.addAll(
+                zone.createEventMarkers(
+                    entryWaypointIndex,
+                    exitWaypointIndex
+                )
+            );
+        }
+        
+        path = new PathPlannerPath(
+            path.getWaypoints(),
+            path.getRotationTargets(),
+            path.getPointTowardsZones(),
+            path.getConstraintZones(),
+            eventMarkers,
+            path.getGlobalConstraints(),
+            path.getIdealStartingState(),
+            path.getGoalEndState(),
+            path.isReversed()
+        );
+        return path;
     }
 }
 

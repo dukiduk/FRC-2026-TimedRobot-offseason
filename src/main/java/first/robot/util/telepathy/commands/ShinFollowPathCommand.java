@@ -112,10 +112,12 @@ public class ShinFollowPathCommand extends Command {
     @Override
     public void initialize() {
         if (shouldFlipPath.getAsBoolean() && !originalPath.preventFlipping) {
-        path = originalPath.flipPath();
+            path = originalPath.flipPath();
         } else {
-        path = originalPath;
+            path = originalPath;
         }
+
+        path = PathUtil.fillRecoveryZones(originalPath);
 
         Pose2d currentPose = poseSupplier.get();
         ChassisVelocities currentSpeeds = speedsSupplier.get();

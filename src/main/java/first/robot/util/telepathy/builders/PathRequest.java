@@ -9,11 +9,11 @@ import com.pathplanner.lib.path.PathConstraints;
 import com.pathplanner.lib.path.PathPlannerPath;
 
 import org.wpilib.math.geometry.Pose2d;
-import first.robot.Constants.DriveConstants;
-import first.robot.util.Elastic;
+import org.wpilib.driverstation.DriverStationErrors;
+import first.robot.util.telepathy.util.PathUtil;
 
 // *An alternate way of creating pathfinder commands.
-// ?Run PathRequest with Pathmaster.submitRequest()
+// ?Run PathRequest with Pathmaster.runRequest()
 // ?Best used for more complex pathfinding operations
 
 public class PathRequest {
@@ -45,18 +45,10 @@ public class PathRequest {
 
     public PathRequest withGoal(String targetPath) {
         try {
-            if (targetPath.startsWith(DriveConstants.choreoKey)) {
-                this.targetPath = PathPlannerPath.fromChoreoTrajectory(targetPath.substring(DriveConstants.choreoKey.length()));
-            } else {
-                this.targetPath = PathPlannerPath.fromPathFile(targetPath);
-            }
+            this.targetPath = PathUtil.getPath(targetPath);
         }
         catch (Exception e) {
-            Elastic.sendNotification(
-                new Elastic.Notification()
-                .withLevel(Elastic.NotificationLevel.ERROR)
-                .withTitle("Pathmaster Error")
-                .withDescription( "Path " + targetPath + " is not defined"));
+            DriverStationErrors.reportError("[PathRequest] CANNOT FIND PATH: " + targetPath, true);
         }
         finally {
             pathFindThenFollowPath = true;

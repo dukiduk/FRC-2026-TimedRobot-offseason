@@ -27,7 +27,6 @@ import first.robot.util.telepathy.util.Recovery;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -476,36 +475,6 @@ public class GoingMerry {
         }
 
         return globals.pathfindThroughStopsThenFollowPathCommandBuilder.apply(goalPath, stops, pathfindingConstraints);
-    }
-
-    /**
-     * Submits a {@link PathRequest} to build the corresponding pathfinding or path-following command.
-     *
-     * @param request The path request details containing target pose/path, stops, constraints, etc.
-     * @param defaultConstraints The fallback path constraints to use if none were specified in the request.
-     * @return A command configured to execute the requested path operation.
-     */
-    public static Command buildRequest(PathRequest request, PathConstraints defaultConstraints) {
-        if (!isPathfindingConfigured()) {
-        throw new AutoBuilderException(
-            "Going Merry was used to build a pathfinding command before being configured");
-        }
-
-        // Use requested constraints if present; otherwise fall back to default
-        PathConstraints constraints = Optional.of(request.getConstraints()).orElse(defaultConstraints);
-
-        if (request.isPathFindThenFollowPath()) {
-        return pathfindThenFollowPath(
-            request.getTargetPath(),
-            request.getStops(),
-            constraints);
-        } else {
-        return pathfindToPose(
-            request.getTargetPose(),
-            request.getStops(),
-            constraints,
-            request.getGoalEndVel());
-        }
     }
 
     /**

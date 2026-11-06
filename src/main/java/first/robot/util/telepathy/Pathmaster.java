@@ -10,12 +10,12 @@ import org.wpilib.command2.Command;
 import org.wpilib.command2.CommandScheduler;
 import org.wpilib.command2.Commands;
 import first.robot.Constants.DriveConstants;
+import first.robot.commands.PPRecoveryCommand;
 import first.robot.subsystems.swerve.CommandSwerveDrivetrain;
 import first.robot.util.Elastic;
 import first.robot.util.FieldUtil;
 import first.robot.util.Zone;
 import first.robot.util.telepathy.builders.*;
-import first.robot.util.telepathy.commands.PPRecoveryCommand;
 import first.robot.util.telepathy.commands.ShinPathfindingCommand;
 import first.robot.util.telepathy.telemetry.*;
 import first.robot.util.telepathy.util.Recovery;
@@ -24,6 +24,7 @@ import first.robot.util.telepathy.zones.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -102,7 +103,7 @@ public class Pathmaster {
     }
 
     private void registerRecoveryModes() {
-        Recovery.registerRecoveryMode("Drive to Point Recovery", (path, state) -> PPRecoveryCommand.generateCommand(path, state));
+        Recovery.registerRecoveryMode("Drive to Point Recovery", (path, state) -> PPRecoveryCommand.generateCommand(drivetrain, path, state));
         Recovery.registerRecoveryMode("Pathfinding Recovery", (path, state) -> GoingMerry.pathfindToPose(state.pose, path.getGlobalConstraints(), state.linearVelocity));
 
         Recovery.setRecoveryTimeoutSeconds(7.0);
@@ -421,19 +422,45 @@ public class Pathmaster {
 
     // *Runs a PathRequest as a ShinPathfindingCommand or a PathPlannerAuto, depending on what you want
     // *Best for more complex pathfinding routines or if you are stupid enough to use this library for auton routines
-    public Command submitRequest(PathRequest request) {
+    public Command runRequest(PathRequest request) {
         pathing = true;
+
         return Commands.defer(() -> {
+            // Activate only the requested zones
             if (request.getActiveZones().length > 0) {
                 activateOnly(request.getActiveZones());
             }
-            if (request.runsAsAuto()) {
-                //Creates a PathPlannerAuto out of the ShinPathfindingCommand, and fills in added event triggers
-                return request.EventTriggerFunction().apply(
-                    new PathPlannerAuto(GoingMerry.buildRequest(request, constraints), robotPose.get())
+
+            // Use requested constraints if present; otherwise use defaults
+            PathConstraints constraints = Objects.requireNonNullElse(request.getConstraints(), this.constraints);
+
+            // Build the pathfinding command
+            Command command;
+
+            if (request.isPathFindThenFollowPath()) {
+                command = GoingMerry.pathfindThenFollowPath(
+                    request.getTargetPath(),
+                    request.getStops(),
+                    constraints
+                );
+            } else {
+                command = GoingMerry.pathfindToPose(
+                    request.getTargetPose(),
+                    request.getStops(),
+                    constraints,
+                    request.getGoalEndVel()
                 );
             }
-            return GoingMerry.buildRequest(request, constraints);
+
+            // Optionally wrap the command in a PathPlannerAuto
+            if (request.runsAsAuto()) {
+                command = request.EventTriggerFunction().apply(
+                    new PathPlannerAuto(command, robotPose.get())
+                );
+            }
+
+            return command;
+
         }, Set.of(drivetrain))
         .finallyDo(() -> {
             pathing = false;
