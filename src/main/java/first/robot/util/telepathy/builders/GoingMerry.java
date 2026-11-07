@@ -23,10 +23,13 @@ import org.wpilib.command2.Commands;
 import first.robot.util.telepathy.commands.ShinFollowPathCommand;
 import first.robot.util.telepathy.commands.ShinPathfindingCommand;
 import first.robot.util.telepathy.util.Recovery;
+import first.robot.util.telepathy.zones.ZoneManager;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -475,6 +478,59 @@ public class GoingMerry {
         }
 
         return globals.pathfindThroughStopsThenFollowPathCommandBuilder.apply(goalPath, stops, pathfindingConstraints);
+    }
+
+    /**
+     * Build a command to run a PathRequest. This will activate the requested zones, pathfind to the requested pose or path, and then follow the path if requested.
+     * @param request The PathRequest to run
+     * @param defaultConstraints The default constraints to use if the request does not specify any
+     * @return A pathfinding command
+     */
+    public static Command runRequest(PathRequest request, PathConstraints defaultConstraints) {
+
+        return Commands.defer(() -> {
+            // Activate only the requested zones
+            if (request.getActiveZones().length > 0) {
+                ZoneManager.setAllZones(false);
+                for (String zoneName : request.getActiveZones()) {
+                    ZoneManager.setZoneState(zoneName, true);
+                }
+            }
+
+            // Use requested constraints if present; otherwise use defaults
+            PathConstraints constraints = Objects.requireNonNullElse(request.getConstraints(), defaultConstraints);
+
+            // Build the pathfinding command
+            Command command;
+
+            if (request.isPathFindThenFollowPath()) {
+                command = GoingMerry.pathfindThenFollowPath(
+                    request.getTargetPath(),
+                    request.getStops(),
+                    constraints
+                );
+            } else {
+                command = GoingMerry.pathfindToPose(
+                    request.getTargetPose(),
+                    request.getStops(),
+                    constraints,
+                    request.getGoalEndVel()
+                );
+            }
+
+            // Optionally wrap the command in a PathPlannerAuto
+            if (request.runsAsAuto()) {
+                command = request.EventTriggerFunction().apply(
+                    new PathPlannerAuto(command, globals.poseSupplier.get())
+                );
+            }
+
+            return command;
+
+        }, Set.of(globals.driveRequirements))
+        .finallyDo(() -> {
+            ZoneManager.setAllZones(true);
+        });
     }
 
     /**

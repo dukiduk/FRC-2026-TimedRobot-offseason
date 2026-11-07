@@ -1,6 +1,5 @@
 package first.robot.util.telepathy;
 
-import com.pathplanner.lib.commands.PathPlannerAuto;
 import com.pathplanner.lib.path.*;
 
 import org.littletonrobotics.junction.AutoLogOutput;
@@ -24,7 +23,6 @@ import first.robot.util.telepathy.zones.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -425,47 +423,7 @@ public class Pathmaster {
     public Command runRequest(PathRequest request) {
         pathing = true;
 
-        return Commands.defer(() -> {
-            // Activate only the requested zones
-            if (request.getActiveZones().length > 0) {
-                activateOnly(request.getActiveZones());
-            }
-
-            // Use requested constraints if present; otherwise use defaults
-            PathConstraints constraints = Objects.requireNonNullElse(request.getConstraints(), this.constraints);
-
-            // Build the pathfinding command
-            Command command;
-
-            if (request.isPathFindThenFollowPath()) {
-                command = GoingMerry.pathfindThenFollowPath(
-                    request.getTargetPath(),
-                    request.getStops(),
-                    constraints
-                );
-            } else {
-                command = GoingMerry.pathfindToPose(
-                    request.getTargetPose(),
-                    request.getStops(),
-                    constraints,
-                    request.getGoalEndVel()
-                );
-            }
-
-            // Optionally wrap the command in a PathPlannerAuto
-            if (request.runsAsAuto()) {
-                command = request.EventTriggerFunction().apply(
-                    new PathPlannerAuto(command, robotPose.get())
-                );
-            }
-
-            return command;
-
-        }, Set.of(drivetrain))
-        .finallyDo(() -> {
-            pathing = false;
-            ZoneManager.setAllZones(true);
-        });
+        return GoingMerry.runRequest(request, constraints).finallyDo(() -> pathing = false);
     }
 
     /**
