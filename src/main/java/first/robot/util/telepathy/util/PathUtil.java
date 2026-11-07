@@ -39,6 +39,7 @@ public final class PathUtil {
      * @param pathName The name of the path or choreo trajectory.
      * @return The retrieved PathPlannerPath.
      * @throws IOException If there is an error reading the path file.
+     * @throws FileNotFoundException if the file cannot be found
      * @throws ParseException If there is an error parsing the path file.
      * @throws FileVersionException If the path file version is incompatible.
      */

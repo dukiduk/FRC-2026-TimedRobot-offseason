@@ -504,13 +504,13 @@ public class GoingMerry {
             Command command;
 
             if (request.isPathFindThenFollowPath()) {
-                command = GoingMerry.pathfindThenFollowPath(
+                command = pathfindThenFollowPath(
                     request.getTargetPath(),
                     request.getStops(),
                     constraints
                 );
             } else {
-                command = GoingMerry.pathfindToPose(
+                command = pathfindToPose(
                     request.getTargetPose(),
                     request.getStops(),
                     constraints,
@@ -581,9 +581,9 @@ public class GoingMerry {
     public static Selectable<Command> buildAutoChooserWithOptionsModifier(
         String defaultAutoName,
         Function<Stream<PathPlannerAuto>, Stream<PathPlannerAuto>> optionsModifier) {
-        if (!AutoBuilder.isConfigured()) {
+        if (!GoingMerry.isConfigured()) {
             throw new RuntimeException(
-                "AutoBuilder was not configured before attempting to build an auto chooser");
+                "GoingMerry was not configured before attempting to build an auto chooser");
         }
 
         Selectable<Command> chooser = new Selectable<>();
