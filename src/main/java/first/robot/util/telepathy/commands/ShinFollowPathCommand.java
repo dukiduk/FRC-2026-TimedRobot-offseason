@@ -15,11 +15,11 @@ import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.math.system.DCMotor;
+import org.wpilib.math.filter.Debouncer;
 import org.wpilib.system.Timer;
 import org.wpilib.command2.Command;
 import org.wpilib.command2.Commands;
 import org.wpilib.command2.Subsystem;
-import org.wpilib.math.filter.Debouncer;
 import first.robot.util.telepathy.util.PathUtil;
 import first.robot.util.telepathy.util.Recovery;
 import first.robot.util.telepathy.telemetry.PPLogging;
@@ -185,66 +185,65 @@ public class ShinFollowPathCommand extends Command {
         //Recovery mode stuff
         if (Recovery.getCurrentMode() != Recovery.NO_RECOVERY) {
         
-        double positionError = PathUtil.distanceAlongPath(path, currentPose, targetState);
+            double positionError = PathUtil.distanceAlongPath(path, currentPose, targetState);
 
-        boolean shouldRecover = fallenBehindPathDebouncer.calculate(positionError >= minRecoveryDistMeters && currentTime >= 0.5);
+            boolean shouldRecover = fallenBehindPathDebouncer.calculate(positionError >= minRecoveryDistMeters && currentTime >= 0.5);
 
-        if (shouldRecover && !isRecovering) {
-            timer.stop();
+            if (shouldRecover && !isRecovering) {
+                timer.stop();
 
-            isRecovering = true;
-            recoveryTimer.reset();
-            recoveryTimer.start();
+                isRecovering = true;
+                recoveryTimer.reset();
+                recoveryTimer.start();
 
-            recoveryCommand = Recovery.getCommandBuilder(Recovery.getCurrentMode()).apply(path, targetState);
-            recoveryCommand.initialize();
-        }
+                recoveryCommand = Recovery.getCommandBuilder(Recovery.getCurrentMode()).apply(path, targetState);
+                recoveryCommand.initialize();
+            }
 
-        // Execute recovery while it is active
-        if (isRecovering) {
-            recoveryCommand.execute();
+            // Execute recovery while it is active
+            if (isRecovering) {
+                recoveryCommand.execute();
 
-            if (recoveryTimer.hasElapsed(recoveryTimeout)) {
-                // Recovery timed out: terminate the child and the parent path command.
-                recoveryCommand.end(true);
-                recoveryCommand = Commands.none();
+                if (recoveryTimer.hasElapsed(recoveryTimeout)) {
+                    // Recovery timed out: terminate the child and the parent path command.
+                    recoveryCommand.end(true);
+                    recoveryCommand = Commands.none();
 
-                recoveryTimer.stop();
-                isRecovering = false;
-                prematureFinish = true;
+                    recoveryTimer.stop();
+                    isRecovering = false;
+                    prematureFinish = true;
+
+                    return;
+                }
+
+                if (recoveryCommand.isFinished()) {
+                    recoveryCommand.end(false);
+                    recoveryCommand = Commands.none();
+
+                    recoveryTimer.stop();
+                    isRecovering = false;
+
+                    //Reset path metadata from recovery
+                    PathPlannerAuto.setCurrentTrajectory(trajectory);
+                    PathPlannerAuto.currentPathName = originalPath.name;
+
+                    PPLogging.logActivePath(path);
+                    PPLibTelemetry.setCurrentPath(path);
+
+                    // Reset controller state before resuming trajectory following.
+                    controller.reset(poseSupplier.get(), speedsSupplier.get());
+
+                    timer.start();
+                }
 
                 return;
             }
-
-            if (recoveryCommand.isFinished()) {
-                recoveryCommand.end(false);
-                recoveryCommand = Commands.none();
-
-                recoveryTimer.stop();
-                isRecovering = false;
-
-                //Reset path metadata from recovery
-                PathPlannerAuto.setCurrentTrajectory(trajectory);
-                PathPlannerAuto.currentPathName = originalPath.name;
-
-                PPLogging.logActivePath(path);
-                PPLibTelemetry.setCurrentPath(path);
-
-                // Reset controller state before resuming trajectory following.
-                controller.reset(poseSupplier.get(), speedsSupplier.get());
-
-                timer.start();
-            }
-
-            return;
-        }
         }
 
-        //Actual normal path following
+        //Actual path following
         ChassisVelocities targetSpeeds = controller.calculateRobotRelativeSpeeds(currentPose, targetState);
 
-        double currentVel =
-            Math.hypot(currentSpeeds.vx, currentSpeeds.vy);
+        double currentVel = Math.hypot(currentSpeeds.vx, currentSpeeds.vy);
 
         PPLibTelemetry.setCurrentPose(currentPose);
         PPLogging.logCurrentPose(currentPose);
@@ -272,7 +271,7 @@ public class ShinFollowPathCommand extends Command {
     @Override
     public boolean isFinished() {
         if (prematureFinish) {
-        return true;
+            return true;
         }
 
         if (isRecovering) {
@@ -300,7 +299,7 @@ public class ShinFollowPathCommand extends Command {
         // Only output 0 speeds when ending a path that is supposed to stop, this allows interrupting
         // the command to smoothly transition into some auto-alignment routine
         if (!interrupted && path.getGoalEndState().velocityMPS() < 0.1) {
-        output.accept(new ChassisVelocities(), DriveFeedforwards.zeros(robotConfig.numModules));
+            output.accept(new ChassisVelocities(), DriveFeedforwards.zeros(robotConfig.numModules));
         }
 
         PPLogging.logActivePath(null);

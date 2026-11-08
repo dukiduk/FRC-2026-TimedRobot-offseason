@@ -13,7 +13,7 @@ import first.robot.commands.PPRecoveryCommand;
 import first.robot.subsystems.swerve.CommandSwerveDrivetrain;
 import first.robot.util.Elastic;
 import first.robot.util.FieldUtil;
-import first.robot.util.Zone;
+import first.robot.util.telepathy.util.Zone;
 import first.robot.util.telepathy.builders.*;
 import first.robot.util.telepathy.commands.ShinPathfindingCommand;
 import first.robot.util.telepathy.telemetry.*;
@@ -422,7 +422,6 @@ public class Pathmaster {
     // *Best for more complex pathfinding routines or if you are stupid enough to use this library for auton routines
     public Command runRequest(PathRequest request) {
         pathing = true;
-
         return GoingMerry.runRequest(request, constraints).finallyDo(() -> pathing = false);
     }
 

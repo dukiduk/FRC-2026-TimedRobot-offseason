@@ -11,7 +11,6 @@ import com.pathplanner.lib.controllers.PathFollowingController;
 import com.pathplanner.lib.path.*;
 import com.pathplanner.lib.trajectory.PathPlannerTrajectory;
 import com.pathplanner.lib.util.*;
-//import org.wpilib.hardware.hal.FRCNetComm.tResourceType;
 import org.wpilib.hardware.hal.HAL;
 import org.wpilib.math.util.MathUtil;
 import org.wpilib.math.geometry.Pose2d;

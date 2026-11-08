@@ -1,7 +1,7 @@
 package first.robot.util.telepathy.zones;
 
 import org.wpilib.command2.Command;
-import first.robot.util.Zone;
+import first.robot.util.telepathy.util.Zone;
 import org.wpilib.math.geometry.Translation2d;
 
 import java.util.ArrayList;

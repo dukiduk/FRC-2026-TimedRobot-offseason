@@ -12,7 +12,7 @@ import com.pathplanner.lib.path.RotationTarget;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.command2.button.Trigger;
-import first.robot.util.Zone;
+import first.robot.util.telepathy.util.Zone;
 import first.robot.util.telepathy.builders.GoingMerry;
 
 /**

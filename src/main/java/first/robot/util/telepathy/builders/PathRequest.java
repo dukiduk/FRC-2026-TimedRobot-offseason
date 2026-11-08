@@ -13,7 +13,7 @@ import org.wpilib.driverstation.DriverStationErrors;
 import first.robot.util.telepathy.util.PathUtil;
 
 // *An alternate way of creating pathfinder commands.
-// ?Run PathRequest with Pathmaster.runRequest()
+// ?Run PathRequest with GoingMerry.runRequest()
 // ?Best used for more complex pathfinding operations
 
 public class PathRequest {
@@ -49,6 +49,7 @@ public class PathRequest {
         }
         catch (Exception e) {
             DriverStationErrors.reportError("[PathRequest] CANNOT FIND PATH: " + targetPath, true);
+            return this;
         }
         finally {
             pathFindThenFollowPath = true;

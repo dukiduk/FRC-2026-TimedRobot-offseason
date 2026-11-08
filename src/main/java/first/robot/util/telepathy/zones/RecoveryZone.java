@@ -1,7 +1,7 @@
 package first.robot.util.telepathy.zones;
 
 import org.wpilib.command2.InstantCommand;
-import first.robot.util.Zone;
+import first.robot.util.telepathy.util.Zone;
 import first.robot.util.telepathy.util.Recovery;
 import org.wpilib.math.geometry.Translation2d;
 
