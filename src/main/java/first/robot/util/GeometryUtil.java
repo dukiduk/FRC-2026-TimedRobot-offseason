@@ -160,6 +160,16 @@ public class GeometryUtil {
   }
 
   /**
+   * Converts a Twist2d to a ChassisVelocities by extracting two dimensions (Y and Z). chain
+   *
+   * @param speeds The original translation
+   * @return The resulting translation
+   */
+  public static ChassisVelocities toChassisVelocities(Twist2d twist) {
+    return new ChassisVelocities(twist.dx, twist.dy, twist.dtheta);
+  }
+
+  /**
    * Creates a new pose from an existing one using a different translation value.
    *
    * @param pose The original pose
