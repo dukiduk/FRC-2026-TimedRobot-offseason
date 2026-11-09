@@ -11,13 +11,13 @@ import com.pathplanner.lib.controllers.PathFollowingController;
 import com.pathplanner.lib.path.*;
 import com.pathplanner.lib.trajectory.PathPlannerTrajectory;
 import com.pathplanner.lib.util.*;
-import org.wpilib.hardware.hal.HAL;
 import org.wpilib.math.util.MathUtil;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.math.system.DCMotor;
 import org.wpilib.units.measure.LinearVelocity;
+import org.wpilib.util.UsageReporting;
 import org.wpilib.system.Timer;
 import org.wpilib.command2.Command;
 import org.wpilib.command2.Commands;
@@ -135,7 +135,7 @@ public class ShinPathfindingCommand extends Command {
     this.eventSupervisor = new EventSupervisor();
 
     instances++;
-    HAL.reportUsage("ShinPathfindingCommand", instances, "Pathfinding to " + targetPath.getStartingDifferentialPose().toString());
+    UsageReporting.reportUsage("Telepathy/ShinPathFindingCommand", instances, "");
   }
 
   /**
@@ -233,7 +233,7 @@ public class ShinPathfindingCommand extends Command {
     this.eventSupervisor = new EventSupervisor();
 
     instances++;
-    HAL.reportUsage("ShinPathfindingCommand", instances, "Pathfinding to " + targetPath.getStartingDifferentialPose().toString());
+    UsageReporting.reportUsage("Telepathy/ShinPathFindingCommand", instances, "");
   }
 
   /**
