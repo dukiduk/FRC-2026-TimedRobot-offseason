@@ -10,20 +10,25 @@ import org.wpilib.simulation.FlywheelSim;
 import org.wpilib.units.measure.Angle;
 import org.wpilib.units.measure.Voltage;
 
-import first.robot.Constants.IntakeConstants;
-import first.robot.subsystems.intake.IntakeIO.IntakeIOInputs;
+import first.robot.Constants.ShooterConstants;
+import first.robot.subsystems.shooter.ShooterIO.ShooterIOInputs;
 import first.robot.util.misc.VirtualPD;
 
 public class ShooterIOSim implements ShooterIO {
-    LinearSystem<N1,N1,N1> system = Models.flywheelFromPhysicalConstants(DCMotor.getNEO(2), 1, 1)
+    LinearSystem<N1,N1,N1> system = Models.flywheelFromPhysicalConstants(DCMotor.getNEO(2), 1, 1);
     private final FlywheelSim sim = new FlywheelSim(system, DCMotor.getNEO(2), 1.0);
     private Angle angle = Radians.of(0);
     private Voltage appliedVolts = Volts.of(0);
 
 
-     @Override 
+    @Override 
     public void setVoltage(Voltage volts) {
         appliedVolts = volts;
+    }
+
+    @Override 
+    public void stop() {
+        appliedVolts = Volts.of(0);
     }
 
     @Override 
