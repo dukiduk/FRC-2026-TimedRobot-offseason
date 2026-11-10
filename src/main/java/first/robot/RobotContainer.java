@@ -17,7 +17,6 @@ import first.robot.subsystems.intake.IntakeIOReal;
 import first.robot.subsystems.intake.IntakeIOSim;
 
 import first.robot.subsystems.swerve.CommandSwerveDrivetrain;
-import first.robot.subsystems.swerve.DriveCommands;
 
 public class RobotContainer {
     private double speedLimiter = 0.7;
@@ -38,14 +37,12 @@ public class RobotContainer {
 
     private void configureBindings() {
         drivetrain.setDefaultCommand(
-                drivetrain.applyRequest(() ->
-                    DriveCommands.joystickDriveRequest(
-                        () -> -driverController.getLeftY() * speedLimiter,
-                        () -> -driverController.getLeftX() * speedLimiter,
-                        () -> -driverController.getRightX() * speedLimiter
-                    )
-                )
-            );
+            drivetrain.joystickDrive(
+                () -> -driverController.getLeftY() * speedLimiter,
+                () -> -driverController.getLeftX() * speedLimiter,
+                () -> -driverController.getRightX() * speedLimiter
+            )
+        );
 
         driverController.leftTrigger().onTrue(
             new InstantCommand(

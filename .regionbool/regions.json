@@ -16,7 +16,7 @@
     {
       "id": "region-mwa6o9ea-1",
       "name": "Trenches",
-      "allianceMode": "alliance-relative",
+      "allianceMode": "fixed",
       "shapes": [
         {
           "kind": "rect",
@@ -61,5 +61,5 @@
       ]
     }
   ],
-  "generatedHash": "91f995c560e9ac479a6aac8c29556b129bf0bc1f1d28104a3a03bfbcbac91d71"
+  "generatedHash": "322d541e45450128b1b8b5f9941f5282d129a81c97ea4ea2e3b45e6a80387b43"
 }

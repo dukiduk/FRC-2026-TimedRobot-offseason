@@ -2,6 +2,7 @@ package first.robot.subsystems.swerve;
 
 import static org.wpilib.units.Units.*;
 
+import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 
 import org.littletonrobotics.junction.Logger;
@@ -30,6 +31,7 @@ import org.wpilib.system.Notifier;
 import org.wpilib.system.RobotController;
 import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.command2.Command;
+import org.wpilib.command2.Commands;
 import org.wpilib.command2.Subsystem;
 import org.wpilib.command2.sysid.SysIdRoutine;
 import first.robot.Constants.DriveConstants;
@@ -460,6 +462,31 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         setControl(
             teleopApplyRobotSpeeds.withVelocity(discreteSpeeds) // Use teleopApplyRobotSpeeds, NOT pathApplyRobotSpeeds.
         );
+    }
+
+    public Command joystickDrive(DoubleSupplier xSupplier, DoubleSupplier ySupplier, DoubleSupplier omegaSupplier) {
+        return Commands.run(
+            () -> {
+                double x = xSupplier.getAsDouble();
+                double y = ySupplier.getAsDouble();
+                double omega = omegaSupplier.getAsDouble();
+
+                x = Math.copySign(x * x, x);
+                y = Math.copySign(y * y, y);
+                omega = Math.copySign(omega * omega, omega);
+
+                double xDrive = x * DriveConstants.kMaxSpeed;
+                double yDrive = y * DriveConstants.kMaxSpeed;
+                double turn = omega * DriveConstants.kMaxAngularRate;
+
+                setControl(driveRequest
+                    .withVelocityX(xDrive)
+                    .withVelocityY(yDrive)
+                    .withRotationalRate(turn));
+                }, 
+            this
+        );
+        
     }
 
     @Override

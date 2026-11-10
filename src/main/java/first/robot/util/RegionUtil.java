@@ -34,7 +34,7 @@ public class RegionUtil {
                 }
             };
         } catch (Exception e) {
-            System.out.println("Trenches failed to load lil bro");
+            System.out.println("Zones failed to load lil bro");
             throw new IllegalArgumentException("No matching region method found for: " + zoneName, e);
         }
     }
@@ -46,7 +46,7 @@ public class RegionUtil {
         }
 
         String[] words = input.trim().split("\\s+");
-        StringBuilder result = new StringBuilder();
+        StringBuilder result = new StringBuilder("isIn");
 
         for (String word : words) {
             if (!word.isEmpty()) {
@@ -57,6 +57,6 @@ public class RegionUtil {
             }
         }
 
-        return "isIn" + result.toString();
+        return result.toString();
     }
 }
